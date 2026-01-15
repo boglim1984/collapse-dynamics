@@ -20,8 +20,21 @@ Probing the brittleness of decision boundaries under directed interpolation. Ini
 - **Results**: [exp01_psychometric.md](docs/results/exp01_psychometric.md)
 - **Colab**: [Run on Colab](https://colab.research.google.com/drive/1jo3duE-NQCSI0sbxEDCCiqS5vDHPmVFS?usp=sharing)
 
-### Experiment 02 — Depth-wise Stability / Lyapunov Scan (Planned)
-Measuring the stability of internal representations and decision trajectories across the depth of the network.
+### Experiment 02 — Lyapunov Stability Scan (Instrument-Complete)
+Localizing where decision commitment happens and how violently the network "locks in" to a categorical state across its depth.
+
+- **Goal**: Measure structural stability (lambda_state) vs. decision sensitivity (lambda_commit).
+- **Channels**:
+  1. `lambda_state`: Relative representation change.
+  2. `lambda_commit`: Local log-sensitivity ratio.
+  3. `cumulative log-gain`: Integrated sensitivity amplification.
+  4. `raw_sensitivity`: Direct sensitivity magnitude (log-scale).
+- **Colab**: [Run on Colab](https://colab.research.google.com/drive/15GBp5msiXxgsUUpa6u5NCZ-WnpjlEgfa?usp=sharing)
+- **Local Script**: `experiments/exp02_lyapunov_stability_scan_final_patched.py`
+
+### Experiment 02B — Absorbing Boundary Calibration (Planned)
+Defining reachable decision commitment thresholds to ensure cross-model comparability under domain shift.
+- **Scaffolding**: `experiments/exp02b_absorbing_boundary_calibration.md`
 
 ### Experiment 03 — Irreversibility Horizon (Planned)
 Quantifying the point-of-no-return in the inference process where the transition from representation to classification becomes informationally irreversible.
@@ -41,6 +54,19 @@ Quantifying the point-of-no-return in the inference process where the transition
 - **Finding**: ViT decision boundaries are brittle and exhibit "step-function" behavior under perturbation.
 - **Interpretation**: Global attention mechanisms lack the local smoothing biases of convolutions, leading to abrupt decision transitions.
 - **Traceability**: See [exp01_psychometric.md](docs/results/exp01_psychometric.md) for full analysis.
+
+---
+
+### Experiment 02 — Lyapunov Stability Scan
+
+**Summary Results (Stability Channels)**
+
+![Lyapunov Stability Scan Placeholder](results/exp02/download-1.png)
+
+*Comparison of commitment dynamics between ResNet and ViT. Note: Dominance onset detection depends on absorbing-boundary definition; results may show "No Dominance" at delta=2.0 under high domain shift.*
+
+- **Finding**: ViT often exhibits "Peak Lag" where commitment happens later but more abruptly than ResNet.
+- **Traceability**: Run `experiments/exp02_lyapunov_stability_scan_final_patched.py` to generate the latest results.
 
 ---
 
