@@ -5,6 +5,8 @@
 - **Dataset**: CIFAR-10 under domain shift (simulated via directed input noise).
 - **Primary Metric**: Collapse Width $\sigma$.
 
+![Psychometric Stress Test Results](../../figures/exp01_psychometric.png)
+
 ## Findings
 The experiment measured the transition speed between decision states along interpolation paths.
 
