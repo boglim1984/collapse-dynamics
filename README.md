@@ -32,10 +32,11 @@ Localizing where decision commitment happens and how violently the network "lock
 - **Colab**: [Run on Colab](https://colab.research.google.com/drive/15GBp5msiXxgsUUpa6u5NCZ-WnpjlEgfa?usp=sharing)
 - **Local Script**: `experiments/exp02_lyapunov_stability_scan_final_patched.py`
 
-### Experiment 02B — Absorbing Boundary Calibration (In-Progress)
+### Experiment 02B — Absorbing Boundary Calibration (Production Hardened)
 Defining reachable decision commitment thresholds to ensure cross-model comparability under domain shift.
-- **Goal**: Calibrate `alpha` and `delta` thresholds to avoid "No Dominance" artifacts.
-- **Local Script**: `experiments/exp02b_absorbing_boundary_calibration.py`
+- **Report**: [Exp02B — Absorbing Boundary Calibration](docs/experiments/exp02b_absorbing_boundary_calibration.md)
+- **Colab**: [Run on Colab](https://colab.research.google.com/drive/1fkaC63lzhEeoEYDCYkF2hdRovMmmYs6Y?usp=sharing)
+- **Settings**: Alpha=0.95 (Locked boundary_spec.json)
 
 ### Experiment 03 — Irreversibility Horizon (Planned)
 Quantifying the point-of-no-return in the inference process where the transition from representation to classification becomes informationally irreversible.
@@ -70,6 +71,20 @@ Quantifying the point-of-no-return in the inference process where the transition
 - **Results**: [exp02_stability_scan.md](docs/results/exp02_stability_scan.md)
 - **Colab**: [Run on Colab](https://colab.research.google.com/drive/15GBp5msiXxgsUUpa6u5NCZ-WnpjlEgfa?usp=sharing)
 - **Traceability**: Run `experiments/exp02_lyapunov_stability_scan_final_patched.py` for local replication.
+
+---
+
+### Experiment 02B — Absorbing Boundary Calibration
+
+**Summary Results (Reach Rate & t_d Distribution)**
+
+![Absorbing Boundary Curves](docs/experiments/exp02b_artifacts/download.png)
+
+*Comparison of reach rates and commitment depth (t_d) across ResNet and ViT. Locked boundary (Alpha=0.95) reveals significantly different commitment profiles.*
+
+- **Finding**: ResNet commits very early ($t_d \approx 0.037$) with high reach, while ViT commits later ($t_d \approx 0.232$) for a subset of samples.
+- **Report**: [Full Research Report](docs/experiments/exp02b_absorbing_boundary_calibration.md)
+- **Artifacts**: [boundary_spec.json](docs/experiments/exp02b_artifacts/boundary_spec.json), [calibration_results.csv](docs/experiments/exp02b_artifacts/calibration_results.csv)
 
 ---
 
