@@ -20,8 +20,22 @@ Probing the brittleness of decision boundaries under directed interpolation. Ini
 - **Results**: [exp01_psychometric.md](docs/results/exp01_psychometric.md)
 - **Colab**: [Run on Colab](https://colab.research.google.com/drive/1jo3duE-NQCSI0sbxEDCCiqS5vDHPmVFS?usp=sharing)
 
-### Experiment 02 — Depth-wise Stability / Lyapunov Scan (Planned)
-Measuring the stability of internal representations and decision trajectories across the depth of the network.
+### Experiment 02 — Lyapunov Stability Scan (Instrument-Complete)
+Localizing where decision commitment happens and how violently the network "locks in" to a categorical state across its depth.
+
+- **Objective**: Measure representation stability (lambda_state) vs. decision sensitivity (lambda_commit).
+- **Core Metrics**:
+  - `d_rel`: Relative state change.
+  - `s_t`: True sensitivity (|dMargin| / ||dx_input||).
+  - `lambda_state`: log(d_t+1 / d_t).
+  - `lambda_commit`: log(s_t+1 / s_t) [clamped].
+- **Colab**: [Run on Colab](https://colab.research.google.com/drive/15GBp5msiXxgsUUpa6u5NCZ-WnpjlEgfa?usp=sharing)
+- **Local Script**: `experiments/exp02_lyapunov_stability_scan_final_patched.py`
+
+### Experiment 02B — Absorbing Boundary Calibration (In-Progress)
+Defining reachable decision commitment thresholds to ensure cross-model comparability under domain shift.
+- **Goal**: Calibrate `alpha` and `delta` thresholds to avoid "No Dominance" artifacts.
+- **Local Script**: `experiments/exp02b_absorbing_boundary_calibration.py`
 
 ### Experiment 03 — Irreversibility Horizon (Planned)
 Quantifying the point-of-no-return in the inference process where the transition from representation to classification becomes informationally irreversible.
@@ -41,6 +55,19 @@ Quantifying the point-of-no-return in the inference process where the transition
 - **Finding**: ViT decision boundaries are brittle and exhibit "step-function" behavior under perturbation.
 - **Interpretation**: Global attention mechanisms lack the local smoothing biases of convolutions, leading to abrupt decision transitions.
 - **Traceability**: See [exp01_psychometric.md](docs/results/exp01_psychometric.md) for full analysis.
+
+---
+
+### Experiment 02 — Lyapunov Stability Scan
+
+**Summary Results (Stability Channels)**
+
+![Lyapunov Stability Scan Results](results/exp02/download-1.png)
+
+*Visual analysis of commitment dynamics. Peak Lag and crossover points indicate architectural differences in decision stiffness. Refer to Experiment 02B for boundary calibration details.*
+
+- **Finding**: Multi-channel analysis confirms late-stage sensitivity spikes in ViT compared to earlier, smoother commitment in ResNet.
+- **Traceability**: Run `experiments/exp02_lyapunov_stability_scan_final_patched.py` for local replication.
 
 ---
 
