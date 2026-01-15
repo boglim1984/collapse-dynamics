@@ -84,7 +84,7 @@ Quantifying the point-of-no-return in the inference process where the transition
 
 - **Finding**: ResNet commits very early ($t_d \approx 0.037$) with high reach, while ViT commits later ($t_d \approx 0.232$).
 - **Balanced Reach**: Added a constrained selection rule to ensure fair architecture comparison (see [Addendum](docs/experiments/exp02b_absorbing_boundary_calibration.md#8-02b-addendum-balanced-reach--pareto-diagnostics)).
-- **Report**: [Full Research Report](docs/experiments/exp02b_absorbing_boundary_calibration.md)
+- **Report**: [Comprehensive Calibration & Absorption Report](docs/experiments/EXP02B_REPORT.md)
 - **Colab**: [Run on Colab](https://colab.research.google.com/drive/1fkaC63lzhEeoEYDCYkF2hdRovMmmYs6Y?usp=sharing)
 - **Artifacts**: [boundary_spec_balanced.json](docs/experiments/exp02b_artifacts/boundary_spec_balanced.json), [pareto_plot.png](docs/experiments/exp02b_artifacts/pareto_plot.png)
 
