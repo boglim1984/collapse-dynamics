@@ -62,7 +62,7 @@ Quantifying the point-of-no-return in the inference process where the transition
 
 **Summary Results (Stability Channels)**
 
-![Lyapunov Stability Scan Results](results/exp02/download-1.png)
+![Lyapunov Stability Scan Results](figures/exp02/stability_scan.png)
 
 *Visual analysis of commitment dynamics. Peak Lag and crossover points indicate architectural differences in decision stiffness. Refer to Experiment 02B for boundary calibration details.*
 
