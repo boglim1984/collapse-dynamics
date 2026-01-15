@@ -33,7 +33,7 @@ Quantifying the point-of-no-return in the inference process where the transition
 
 ![Psychometric Stress Test Results](figures/exp01_psychometric.png)
 
-*Collapse Width ($\sigma$) comparison between ResNet18 and ViT architectures. ViT exhibits significantly narrower $\sigma$ ($\approx 0.04$), indicating more brittle decision collapse compared to ResNet ($\approx 0.07$).*
+*Collapse Width (σ) comparison between ResNet18 and ViT architectures. ViT exhibits significantly narrower σ (≈ 0.04), indicating more brittle decision collapse compared to ResNet (≈ 0.07).*
 
 - **Finding**: ViT decision boundaries are brittle and exhibit "step-function" behavior under perturbation.
 - **Interpretation**: Global attention mechanisms lack the local smoothing biases of convolutions, leading to abrupt decision transitions.
