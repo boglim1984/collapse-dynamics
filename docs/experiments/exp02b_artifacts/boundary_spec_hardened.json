@@ -1,0 +1,19 @@
+{
+  "selection_method": "Dominance Hardening Sweep (Relative-to-final)",
+  "req_consecutive": 3,
+  "alpha_selected": 0.7,
+  "min_paired_reach": 0.25,
+  "max_reach_gap_abs": 0.2,
+  "eps_final_margin": 0.001,
+  "stats": {
+    "paired_reach": 0.492,
+    "n_paired": 246,
+    "reach_resnet": 0.97,
+    "reach_vit": 0.504,
+    "reach_gap_abs": 0.46599999999999997,
+    "mean_td_resnet_paired": 0.033101045296167246,
+    "mean_td_vit_paired": 0.21840354767184036,
+    "td_gap_paired": -0.1853025023756731,
+    "cohens_d_paired": 0.8794191707036794
+  }
+}
