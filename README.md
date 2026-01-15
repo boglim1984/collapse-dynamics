@@ -17,6 +17,9 @@ This research marks a definitive pivot away from geometric interpretability towa
 ### Experiment 01 — Psychometric Stress Test (Completed)
 Probing the brittleness of decision boundaries under directed interpolation. Initial results compare ResNet18 and ViT architectures under domain shift.
 
+- **Results**: [exp01_psychometric.md](docs/results/exp01_psychometric.md)
+- **Colab**: [Run on Colab](https://colab.research.google.com/drive/1jo3duE-NQCSI0sbxEDCCiqS5vDHPmVFS?usp=sharing)
+
 ### Experiment 02 — Depth-wise Stability / Lyapunov Scan (Planned)
 Measuring the stability of internal representations and decision trajectories across the depth of the network.
 

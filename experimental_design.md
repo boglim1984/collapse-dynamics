@@ -23,5 +23,9 @@ The **Collapse Width** σ is defined as the width of the transition region where
 1. **Stability Scan**: Correlating Collapse Width with Lyapunov exponents of internal layers.
 2. **Irreversibility**: Measuring when in the interpolation path the network loses the ability to "recover" the original class identity through small perturbations.
 
+## Results & Implementation
+- **Colab Notebook**: [Psychometric Stress Test Implementation](https://colab.research.google.com/drive/1jo3duE-NQCSI0sbxEDCCiqS5vDHPmVFS?usp=sharing)
+- **Results Summary**: [exp01_psychometric.md](docs/results/exp01_psychometric.md)
+
 ---
-**Status**: Formal Experimental Contract
+**Status**: Completed (Falsification Applied)
