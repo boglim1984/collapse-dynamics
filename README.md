@@ -67,6 +67,8 @@ Quantifying the point-of-no-return in the inference process where the transition
 *Visual analysis of commitment dynamics. Peak Lag and crossover points indicate architectural differences in decision stiffness. Refer to Experiment 02B for boundary calibration details.*
 
 - **Finding**: Multi-channel analysis confirms late-stage sensitivity spikes in ViT compared to earlier, smoother commitment in ResNet.
+- **Results**: [exp02_stability_scan.md](docs/results/exp02_stability_scan.md)
+- **Colab**: [Run on Colab](https://colab.research.google.com/drive/15GBp5msiXxgsUUpa6u5NCZ-WnpjlEgfa?usp=sharing)
 - **Traceability**: Run `experiments/exp02_lyapunov_stability_scan_final_patched.py` for local replication.
 
 ---
