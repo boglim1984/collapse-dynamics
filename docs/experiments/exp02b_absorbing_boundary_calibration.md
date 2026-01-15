@@ -96,10 +96,42 @@ The machine-readable configuration [boundary_spec.json](./exp02b_artifacts/bound
 
 ---
 
+## 8. 02B Addendum: Balanced Reach + Pareto Diagnostics
+
+### Motivation: The Reach Asymmetry Problem
+Initial calibration (Section 4) revealed a significant "reach gap" between ResNet and ViT when using a fixed high-alpha threshold. While maximizing common reach is a valid heuristic, it can lead to imbalanced comparisons where one architecture is represented by 95% of samples and the other by barely 40%. This asymmetry may confound measurements of $t_d$ distributions.
+
+### Balanced Selection Rule
+To harden 02B for fair cross-architecture comparison, we introduce a **Balanced-Reach Constrained Selection**. This rule optimizes for `common_reach` while strictly bounding the `reach_gap` between architectural cohorts.
+
+- **Definitions**:
+    - **`common_reach`**: $\min(\text{reach}_{resnet}, \text{reach}_{vit})$
+    - **`reach_gap`**: $|\text{reach}_{resnet} - \text{reach}_{vit}|$
+- **Selection Objective**: Maximize `common_reach` subject to `reach_gap` $\le \Delta_{GAP}$ (default 0.10).
+- **Fallback Logic**: If no candidates satisfy $\Delta_{GAP}=0.10$, the constraint is widened progressively ($0.15 \to 0.20$) to ensure a solution exists in high-noise/high-shift scenarios.
+
+### Pareto Diagnostics
+The tradeoff surface between coverage (`common_reach`) and fairness (`reach_gap`) is visualized via a Pareto analysis. This ensures that the selection of a "balanced" boundary is explainable and verifiable against its effect on discriminatory power (Cohen's $d$).
+
+![Pareto Analysis](./exp02b_artifacts/pareto_plot.png)
+*Figure: Pareto front showing the tradeoff between common coverage and architectural asymmetry.*
+
+### Falsifiable Directional Checks
+The following checks are recorded to ensure the diagnostic remains "physically" consistent across varied boundary settings:
+1. **Direction Check 1 (Reach)**: $\text{reach}_{resnet} > \text{reach}_{vit}$ (expected sign of asymmetry).
+2. **Direction Check 2 (Depth)**: $t_d(resnet) < t_d(vit)$ (ResNet earlier commitment).
+3. **Effect Size Integrity**: The balanced boundary should maintain a significant Cohen's $d$ ($> 0.8$) to remain useful for Experiment 03.
+
+---
+
 ## Reproduction and Artifacts
 
 ### Artifacts (Local)
-- [Boundary Specification](./exp02b_artifacts/boundary_spec.json)
+- [Matched Alpha Sweep (Balanced)](./exp02b_artifacts/matched_alpha_sweep_balanced.csv)
+- [Balanced Boundary Specification](./exp02b_artifacts/boundary_spec_balanced.json)
+- [Pareto Front Plot](./exp02b_artifacts/pareto_plot.png)
+- [Alpha Tradeoff Plot](./exp02b_artifacts/alpha_tradeoff_plot.png)
+- [Original Boundary Specification](./exp02b_artifacts/boundary_spec.json)
 - [Calibration Results (CSV)](./exp02b_artifacts/calibration_results.csv)
 - [Mean Trajectory & Reach Plot (PNG)](./exp02b_artifacts/download.png)
 

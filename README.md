@@ -82,9 +82,10 @@ Quantifying the point-of-no-return in the inference process where the transition
 
 *Comparison of reach rates and commitment depth (t_d) across ResNet and ViT. Locked boundary (Alpha=0.95) reveals significantly different commitment profiles.*
 
-- **Finding**: ResNet commits very early ($t_d \approx 0.037$) with high reach, while ViT commits later ($t_d \approx 0.232$) for a subset of samples.
+- **Finding**: ResNet commits very early ($t_d \approx 0.037$) with high reach, while ViT commits later ($t_d \approx 0.232$).
+- **Balanced Reach**: Added a constrained selection rule to ensure fair architecture comparison (see [Addendum](docs/experiments/exp02b_absorbing_boundary_calibration.md#8-02b-addendum-balanced-reach--pareto-diagnostics)).
 - **Report**: [Full Research Report](docs/experiments/exp02b_absorbing_boundary_calibration.md)
-- **Artifacts**: [boundary_spec.json](docs/experiments/exp02b_artifacts/boundary_spec.json), [calibration_results.csv](docs/experiments/exp02b_artifacts/calibration_results.csv)
+- **Artifacts**: [boundary_spec_balanced.json](docs/experiments/exp02b_artifacts/boundary_spec_balanced.json), [pareto_plot.png](docs/experiments/exp02b_artifacts/pareto_plot.png)
 
 ---
 
