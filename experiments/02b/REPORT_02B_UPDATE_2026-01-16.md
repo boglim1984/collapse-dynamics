@@ -58,7 +58,7 @@ To provide a more rigorous null baseline, we have replaced sample-shuffling with
 2. **Pooled-Resample Null**: Build a pooled set of all trajectories and randomly assign them into two new groups of size $N$. This destroys the architectural identity of the samples.
 
 > [!NOTE]
-> **Implementation Update**: Falsifiers have been updated in the stability harness to operate on scalar outcomes ($t_{abs}$) rather than full trajectories. This allows for fair comparison even when model depths differ (e.g., ResNet $L=8$ vs ViT $L=12$), preventing invalid cross-architecture trajectory swaps and shape-mismatch errors.
+> **Implementation Update**: Balanced-reach 1hr script: falsifiers updated to operate on scalar $t_{abs}$ because ResNet $L=8$ vs ViT $L=12$; fixed autograd mode so probe training works under Colab.
 
 ---
 
