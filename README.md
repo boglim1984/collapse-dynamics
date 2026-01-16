@@ -87,11 +87,10 @@ Quantifying the point-of-no-return in the inference process where the transition
 - **Artifacts**: [boundary_spec_balanced.json](experiments/02b/data/boundary_spec_balanced.json), [stability_runs.csv](experiments/02b/data/stability_runs.csv)
 
 #### Experiment 02B Result Snapshot
-- **Primary Metric**: $\Delta t_{abs}$ (Absorption Time Gap) $= -0.360$ (ResNet earlier commit).
-- **Effect Size**: Cohen’s $d \approx -0.934$ (Large separation).
-- **Robustness**: **60/60** runs showed consistent directionality (ResNet stable earlier).
-- **Falsifiers**: **Depth-Permute** passed (collapsed effect); **Sample-Shuffle** failed (known issue).
-- **Full Report**: [REPORT_02B_UPDATE_2026-01-16.md](experiments/02b/REPORT_02B_UPDATE_2026-01-16.md)
+- **Core Effect**: $\Delta t_{abs} = -0.360$, Cohen’s $d \approx -0.934$ (Large separation at $\alpha=0.70$).
+- **Robustness**: **60/60** runs confirmed ResNet absorbs earlier than ViT.
+- **Falsification**: **Depth-Permute** passed; **Sample-Shuffle** failed (known limitation).
+- **Report**: [REPORT_02B_UPDATE_2026-01-16.md](experiments/02b/REPORT_02B_UPDATE_2026-01-16.md)
 
 ---
 
