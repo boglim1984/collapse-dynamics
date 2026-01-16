@@ -1,17 +1,18 @@
-# ================================================================
-# Experiment 02B — 1-Cell Colab Long-Run (Balanced-Reach + t_abs + Falsifiers)
-# Goals:
-#  - run ~1 hour (time-boxed) and keep saving artifacts as it goes
-#  - use absorption time t_abs (last-violation) as the primary stability metric
-#  - pick alpha per run using a "balanced reach" constraint (paired / fair)
-#  - run falsifiers that are actually meaningful:
-#       (1) depth-permute (should collapse toward ~0)
-#       (2) label-swap per sample (should collapse toward ~0)
-#       (3) pooled-resample (should collapse toward ~0)
-#  - OOM hardened: smaller batches, amp, explicit cleanup, cache flush
-# ================================================================
-
 import os, sys, time, json, math, gc, warnings
+warnings.filterwarnings("ignore")
+
+import torch
+
+# ---- BANNER / SELF-DIAGNOSIS ----
+print("="*60)
+print(f"EXP 02B: CANONICAL 1-HOUR STABILITY HARNESS")
+print(f"Torch Version: {torch.__version__}")
+print(f"CUDA Available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"Device Name: {torch.cuda.get_device_name(0)}")
+print("="*60)
+
+# ---- CONFIG & OOM Hardening ----
 warnings.filterwarnings("ignore")
 
 # ---- OOM / allocator hardening (helps fragmentation) ----
@@ -516,4 +517,7 @@ while (time.time() - start)/60.0 < RUN_MINUTES and run_id < RUNS_MAX:
         continue
     except Exception as e: print("[ERROR]:", e); break
 
-print("\nSaved:", os.path.join(OUTDIR, "runs_summary.csv"))
+# final print
+df = pd.DataFrame(rows)
+if len(df): print_live_summary(df)
+print(f"\n[FINISH] Saved: {os.path.join(OUTDIR, 'runs_summary.csv')}")

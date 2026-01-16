@@ -34,11 +34,11 @@ Localizing where decision commitment happens and how violently the network "lock
 
 ### Experiment 02B — Absorbing Boundary Calibration (Production Hardened)
 Defining reachable decision commitment thresholds to ensure cross-model comparability under domain shift.
-- **Report**: [Experiment 02B: Multi-Pass Calibration & Absorption Analysis](docs/exp02b_report.md)
-- **Latest Update**: [02B Long-Run Stability & Falsifier Analysis (2026-01-16)](experiments/02b/REPORT_02B_UPDATE_2026-01-16.md)
+- **Report**: [Experiment 02B Update (2026-01-16)](experiments/02b/REPORT_02B_UPDATE_2026-01-16.md)
+- **Harness**: [docs/experiments/02b/colab_harness_1hr.py](docs/experiments/02b/colab_harness_1hr.py) (Canonical 1-hour run)
 - **Colab**: [Run on Colab](https://colab.research.google.com/drive/1fkaC63lzhEeoEYDCYkF2hdRovMmmYs6Y?usp=sharing)
-- **Settings**: Alpha=0.50 (Locked in long-run runs_summary.csv)
-- **Local Script**: `experiments/02b/exp02b_absorbing_boundary_calibration.py` (OOM Hardened)
+- **Settings**: Alpha=0.60 (Balanced Reach / Balanced Gap selection)
+- **Status**: Falsifiers verified; OOM-hardened.
 
 ### Experiment 03 — Irreversibility Horizon (Planned)
 Quantifying the point-of-no-return in the inference process where the transition from representation to classification becomes informationally irreversible.
@@ -88,7 +88,7 @@ Quantifying the point-of-no-return in the inference process where the transition
 - **Multi-Metric Stability**: 60-seed long-run confirms $t_{abs}$ (absorption time) gap $\approx -0.360$ (ResNet earlier) and violation gap (ViT higher jitter).
 - **Falsifier Status**: Depth-permute verified ($d \approx 0$); Sample-shuffle marked as invalid/weak; Pooled-resample and Label-swap nulls implemented in harness.
 - **Reports**: [Consolidated Analysis](docs/exp02b_report.md) | [2026-01-16 Update](experiments/02b/REPORT_02B_UPDATE_2026-01-16.md)
-- **Artifacts**: [boundary_spec_balanced.json](experiments/02b/data/boundary_spec_balanced.json), [runs_summary.csv](experiments/02b/data/runs_summary.csv)
+- **Artifacts**: [boundary_spec_balanced.json](experiments/02b/data/boundary_spec_balanced.json), [stability_runs.csv](experiments/02b/data/stability_runs.csv)
 
 ---
 
