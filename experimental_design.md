@@ -28,4 +28,8 @@ The **Collapse Width** σ is defined as the width of the transition region where
 - **Results Summary**: [exp01_psychometric.md](docs/results/exp01_psychometric.md)
 
 ---
-**Status**: Completed (Falsification Applied)
+- **Experiment 02C**: Irreversibility Horizon (floating threshold; results showed escape $\approx$ null; motivated fixed-threshold rewrite).
+- **Experiment 02D**: Fixed-threshold basin wall + Time-To-Escape (TTE) introduced; reveals differential fragility (ViT escapes sooner).
+
+---
+**Status**: Experiment 02 (Stability & Irreversibility) Complete
