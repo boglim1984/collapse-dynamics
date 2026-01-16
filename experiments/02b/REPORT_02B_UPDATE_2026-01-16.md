@@ -119,15 +119,15 @@ $t_{abs}$ is **late-snap safe**. Unlike "k consecutive layers" metrics, it defin
 - **02B Freeze Status**: **Frozen**
 - **Primary Claim**: $t_{abs}$ gap (R−V) is robustly negative and large ($d \approx -0.934$) at $\alpha=0.70$.
 - **Robustness**: Stable directionality in **60/60** runs of the 1-hour scan.
-- **Passing Falsifier**: **Depth-Permute** (collapses to $d \approx -0.1$).
-- **Non-Passing Falsifiers**: **Sample-Shuffle**, **Label-Swap**, and **Pooled-Resample** failed to collapse the effect ($d \approx -0.9$); they are currently considered invalid nulls as implemented.
+- **Passing Falsifier**: **Depth-Permute**.
+- **Non-Passing Falsifiers**: **Sample-Shuffle**, **Label-Swap**, and **Pooled-Resample** (failed/inconclusive as implemented).
 
 ## Artifacts (Canonical & Tracked)
-- **Harness**: docs/experiments/02b/colab_harness_1hr.py
-- **Calibration**: experiments/02b/exp02b_absorbing_boundary_calibration.py
-- **Summary Metrics**: experiments/02b/data/stability_runs.csv
-- **Absorption Data**: experiments/02b/data/absorption_time_metrics.csv
-- **Reproducibility Spec**: experiments/02b/data/boundary_spec_balanced.json
-- **Auxiliary Artifacts**: experiments/02b/data/boundary_spec_*.json, matched_alpha_sweep.csv, download.png.
+- **Harness**: [docs/experiments/02b/colab_harness_1hr.py](docs/experiments/02b/colab_harness_1hr.py)
+- **Calibration**: [experiments/02b/exp02b_absorbing_boundary_calibration.py](experiments/02b/exp02b_absorbing_boundary_calibration.py)
+- **Summary Metrics**: [experiments/02b/data/stability_runs.csv](experiments/02b/data/stability_runs.csv)
+- **Absorption Data**: [experiments/02b/data/absorption_time_metrics.csv](experiments/02b/data/absorption_time_metrics.csv)
+- **Reproducibility Spec**: [experiments/02b/data/boundary_spec_balanced.json](experiments/02b/data/boundary_spec_balanced.json)
+- **Auxiliary Artifacts**: [experiments/02b/data/boundary_spec_*.json](experiments/02b/data/boundary_spec_matched.json), [matched_alpha_sweep.csv](experiments/02b/data/matched_alpha_sweep.csv), [download.png](experiments/02b/data/download.png).
 
 **Reproduction**: To reproduce, run the canonical harness `docs/experiments/02b/colab_harness_1hr.py` in a T4 Colab environment. Ensure the definitions cell is run first to avoid `NameError`.
