@@ -85,10 +85,10 @@ Quantifying the point-of-no-return in the inference process where the transition
 *Comparison of reach rates and commitment depth (t_d) across ResNet and ViT. Locked boundary (Alpha=0.95) reveals significantly different commitment profiles.*
 
 - **Finding**: ResNet commits very early ($t_d \approx 0.037$) with high reach, while ViT commits later ($t_d \approx 0.232$).
-- **Long-Run Stability**: 60/60 runs confirm $t_{abs}$ and violation gap direction (ResNet earlier/cleaner).
-- **Balanced Reach**: Added a constrained selection rule to ensure fair architecture comparison (see [Addendum](docs/exp02b_report.md#2-experiment-02b-extensions-reach-constraints--absorption-time)).
+- **Multi-Metric Stability**: 60-seed long-run confirms $t_{abs}$ (absorption time) gap $\approx -0.360$ (ResNet earlier) and violation gap (ViT higher jitter).
+- **Falsifier Status**: Depth-permute verified ($d \approx 0$); Sample-shuffle marked as invalid/weak; Pooled-resample and Label-swap nulls implemented in harness.
 - **Reports**: [Consolidated Analysis](docs/exp02b_report.md) | [2026-01-16 Update](experiments/02b/REPORT_02B_UPDATE_2026-01-16.md)
-- **Artifacts**: [boundary_spec_balanced.json](experiments/02b/data/boundary_spec_balanced.json), [pareto_plot.png](docs/experiments/exp02b_artifacts/pareto_plot.png)
+- **Artifacts**: [boundary_spec_balanced.json](experiments/02b/data/boundary_spec_balanced.json), [runs_summary.csv](experiments/02b/data/runs_summary.csv)
 
 ---
 

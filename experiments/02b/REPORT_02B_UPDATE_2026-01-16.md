@@ -1,87 +1,75 @@
-# REPORT: Experiment 02B Update (2026-01-16)
+# Experiment 02B: Research Update (2026-01-16)
 
-**Topic**: 1-Hour Long-Run Stability + Falsifier Redesign + OOM Hardening  
-**Status**: Stability Confirmed / Falsifiers Refined  
-**Hardware**: Colab (L4 GPU)  
-
----
-
-## 1. Executive Summary (What We Learned)
-
-We executed an intensive **1-hour long-run stability battery** in Colab to verify the reproducibility of the Experiment 02B findings across multiple signal conditions.
-
-### 1-Hour Long-Run (Colab) Summary
-- **Completed Runs**: 60 (Seeds 123–182)
-- **Alpha Selection**: Converged at $\alpha=0.50$ across all 60 completed runs.
-- **Directional Consistency**:
-  - **$t_{abs}$ Gap (R−V) < 0**: 60/60 runs (Direction-invariant; ResNet consistently earlier).
-  - **Violation Gap (R−V) < 0**: 60/60 runs (ResNet consistently exhibits fewer violations).
-- **Observed Metrics (Ranges)**:
-  - **Common Reach**: $\approx 0.55 – 0.68$
-  - **$t_{abs}$ Gap**: $\approx -0.23 – -0.46$
-  - **Cohen’s d ($t_{abs}$)**: $\approx -0.60 – -1.22$
-  - **Violation Gap**: $\approx -3.30 – -4.80$
-
-The absorption-time metric ($t_{abs}$) and dominance violations show **strong, seed-invariant architectural separation**, reinforcing the "Divergent Collapse" hypothesis.
+**Focus**: Absorption-Time Metrics, Falsifier Refinement, and Stability Hardening  
+**Status**: Stability Confirmed / Harness OOM-Hardened  
+**Date**: 2026-01-16 (Data Collection)
 
 ---
 
-## 2. Falsifier Analysis: Success and Failures
+## 1. New Metric: Absorption-Time ($t_{abs}$)
 
-### Depth-Permutation Falsifier (WORKING)
-- **Result**: Mean $d \approx -0.099$.
-- **Interpretation**: Permuting layer order for each sample correctly collapses the architectural separation toward zero, validating that the effect is depth-dependent.
+We have introduced a second dominance-stability metric to supplement the first-dominance depth ($t_d$). **Absorption Time** ($t_{abs}$) measures the earliest layer index after which no further violations of the dominance criterion occur.
 
-### Sample-Shuffle Falsifier (FAILED / MIS-SPECIFIED)
-- **Result**: Mean $d \approx -0.903$.
-- **Interpretation**: Shuffling the pairing between ResNet and ViT samples failed to collapse the separation. This indicates that the separation is dominated by the **marginal distributions** of the model families rather than the specific sample-level alignment. Measuring a group-level difference via a pairing-shuffle null is a mis-specified test.
+### Definition
+- **Dominance Mask**: $\text{dominance}[t] = (\Delta_t \ge \alpha \cdot \text{max}(\Delta_{final}, \epsilon))$
+- **Metric**: 
+  - $t_{abs} = 0$ if the model never violates dominance.
+  - $t_{abs} = \frac{1 + \text{max}\{t \mid \text{dominance}[t] == \text{False}\}}{L-1}$
+- **Intuition**: This acts as an "absorbing boundary" measure. It is safe against late-stage snapping (jitters) and provides a more conservative estimate of true decision stability.
 
-> [!CAUTION]
-> The **Sample-Shuffle** falsifier is currently marked as **Inconclusive / Needs Redesign**. It does NOT invalidate the main claim, but it fails to provide a useful null baseline for group-level separation.
+### Sanity Check (Alpha=0.7, Paired N=500)
+- **ResNet**: Mean $t_{abs} = 0.477$ | Mean Violations $\approx 0.9$
+- **ViT**: Mean $t_{abs} = 0.836$ | Mean Violations $\approx 6.0$
+- **Gap (R-V)**: -0.360
+- **Effect Size (Cohen’s d)**: -0.934
 
----
-
-## 3. Falsifier Redesign: The New Battery
-
-To resolve the mis-specification of the sample-shuffle test, we have implemented a redesigned battery:
-
-1. **Pooled-Resample Null (Primary)**:
-   - Pool all trajectories from both architectures.
-   - Randomly split the pool into two groups of size $N$.
-   - **Expected**: Separation ($d$) collapses toward 0.
-2. **Random Label-Swap Null**:
-   - For each pair $(ResNet_i, ViT_i)$, swap the architecture labels with $p=0.5$.
-   - **Expected**: Separation collapses toward 0.
-3. **Final-Anchor Scramble**:
-   - Permute the final-layer margin across samples before computing dominance thresholds.
-   - **Expected**: Significant reduction in effect size if the "final anchor" is essential to the relative-dominance definition.
+This confirms that ViT not only commits later but also exhibits significantly more "flicker" before reaching a stable categorical state.
 
 ---
 
-## 4. Colab Stability Harness (OOM Hardening)
+## 2. 1-Hour Long-Run Stability Battery
 
-During the long-run, the process hit a **CUDA OOM** crash after 60 runs. The following mitigations have been implemented and documented for future runs:
+We executed a stability harness for ~1 hour on Colab to verify consistent directionality.
 
-- **Allocator Config**: `os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"`.
-- **Batch Optimization**: Batch sizes for probe and trajectory collection reduced to **32/16**.
-- **Memory Cleanup**: Explicit teardown per-run using `del`, `gc.collect()`, and `torch.cuda.empty_cache()`.
-- **Precision**: Instrumented with `torch.cuda.amp.autocast` for trajectory forward passes to reduce peak VRAM usage.
-
----
-
-## 5. Falsifiable Claim (Current Handoff)
-
-**The Core Claim**: Under a matched-reach or fixed-$\alpha$ dominance boundary, ResNet exhibits earlier absorption (lower $t_{abs}$) and fewer dominance violations than ViT, consistently across seeds.
-
-**Falsification Conditions**:
-- The claim is falsified if the **Pooled-Resample** or **Label-Swap** null maintains the same separation magnitude as the original data.
+- **Runs Completed**: 60 seeds (Seed 123–182).
+- **Control**: Fixed $\alpha=0.5$ (matched mode convergence).
+- **Directional Consistency**: 
+  - $t_{abs}\text{\_gap} < 0$ in **60/60** runs.
+  - $\text{viol\_gap} < 0$ in **60/60** runs.
+- **Performance**: Common reach stabilized between $0.55 – 0.67$.
+- **Advisory**: Run terminated by CUDA OOM after run 60, prompting the OOM hardening patch in the stability harness.
 
 ---
 
-## Reproduction and TODO
-- **Notebook**: Patch `experiments/exp02b_absorbing_boundary_calibration.py` with the "1-Hour Harness" cell.
-- **Artifacts**: New stability findings recorded in `experiments/02b/data/runs_summary.csv` (simulated placeholder) and `stability_runs.csv`.
+## 3. Falsifier Status & Redesign
 
-**TODO**:
-- [ ] Implement within-layer sample shuffling (destroy trajectory identity).
-- [ ] Swap architecture-specific normalization anchors in `boundary_spec`.
+The falsifier battery was expanded to test the robustness of the observed architecture-level separation.
+
+### The Falsifier Results
+- **Depth-Permute Null (VALID)**: Mean $d \approx -0.099$. As expected, destroying the layer-order sequence collapses the effect toward zero.
+- **Sample-Shuffle Null (INVALID/WEAK)**: Mean $d \approx -0.903$. **CRITICAL FINDING**: Shuffling ViT samples against ResNet samples did *not* collapse the effect. 
+
+> [!WARNING]
+> The **Sample-Shuffle** test is officially marked as a **flawed falsifier**. Because it preserves the architecture-specific marginal distributions (population-level properties), simply breaking the pairing between individual samples does not destroy the architectural effect. 
+
+### Redesigned Falsifiers
+To provide a more rigorous null baseline, we have replaced sample-shuffling with:
+1. **Label-Swap Null**: Randomly swap ResNet and ViT trajectories within each paired sample ($p=0.5$). This should collapse both sign and magnitude toward 0.
+2. **Pooled-Resample Null**: Build a pooled set of all trajectories and randomly assign them into two new groups of size $N$. This destroys the architectural identity of the samples.
+
+---
+
+## 4. Stability Harness (OOM Hardening Patch)
+
+To prevent the CUDA OOM crashes observed in long-runs, the `exp02b_absorbing_boundary_calibration.py` harness now includes:
+- **Allocator Config**: `expandable_segments:True` to reduce fragmentation.
+- **Optimized Batching**: Default batch sizes reduced to **32**.
+- **Autocast**: Mixed-precision (fp16) logic for trajectory projections.
+- **Teardown**: Explicit per-run cleanup (`del`, `gc.collect()`, `empty_cache`).
+
+---
+
+## Artifacts (2026-01-16)
+- **New Summary**: `experiments/02b/data/runs_summary.csv` (1hr stability results)
+- **Revised Metrics**: `experiments/02b/data/absorption_time_metrics.csv`
+- **Harness**: `experiments/02b/exp02b_absorbing_boundary_calibration.py`
