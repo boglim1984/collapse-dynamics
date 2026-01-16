@@ -243,8 +243,7 @@ class HighFidelityTracker:
                 x = x.to(device, non_blocking=True)
                 opt.zero_grad(set_to_none=True)
                 
-                # FINAL FIX: final_logits and forward pass are no-grad to save VRAM, 
-                # but probe update MUST have gradients enabled.
+                # FIXED: Enable gradients for probe updates, but keep model forward no-grad.
                 with torch.no_grad():
                     final_logits = self.model(x)
                     _ = self.forward(x)
@@ -252,6 +251,7 @@ class HighFidelityTracker:
                 with torch.enable_grad():
                     total = 0.0
                     for name in self.layer_order:
+                        # detached rep prevents backprop into model even if grads are enabled
                         r = self.get_rep(self.activations[name]).detach()
                         z = self.probes[name](r)
                         total = total + loss_fn(z, final_logits)
@@ -278,7 +278,7 @@ def collect_trajectories(tracker: HighFidelityTracker, loader, device) -> np.nda
     # Determine L first
     x0, _ = next(iter(loader))
     x0 = x0.to(device, non_blocking=True)
-    with torch.cuda.amp.autocast(enabled=(device.type=="cuda")):
+    with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
         acts0 = tracker.forward(x0)
         logits0 = tracker.project_layer_logits(acts0)
         L = len(logits0)
@@ -290,7 +290,7 @@ def collect_trajectories(tracker: HighFidelityTracker, loader, device) -> np.nda
     write_i = 0
     for i, (x, _y) in enumerate(tqdm(loader, desc=f"traj {tracker.arch_type}", leave=False)):
         x = x.to(device, non_blocking=True)
-        with torch.cuda.amp.autocast(enabled=(device.type=="cuda"), dtype=torch.float16):
+        with torch.cuda.amp.autocast(enabled=(device.type == "cuda"), dtype=torch.float16):
             acts = tracker.forward(x)
             logits_layers = tracker.project_layer_logits(acts)
             margins = torch.stack([batch_margin(z) for z in logits_layers], dim=1)  # (B,L)
@@ -343,60 +343,41 @@ def sweep_alphas(res_traj, vit_traj, alphas, eps_final, req_consecutive):
     rows = []
     for alpha in alphas:
         td_r = []; td_v = []
-        tabs_r = np.empty(N, dtype=np.float32)
-        tabs_v = np.empty(N, dtype=np.float32)
-        viol_r = np.empty(N, dtype=np.int32)
-        viol_v = np.empty(N, dtype=np.int32)
+        tabs_r = np.empty(N, dtype=np.float32); tabs_v = np.empty(N, dtype=np.float32)
+        viol_r = np.empty(N, dtype=np.int32); viol_v = np.empty(N, dtype=np.int32)
 
         for i in range(N):
             tdr = t_d_persistence(res_traj[i], alpha, eps_final, req_consecutive)
             tdv = t_d_persistence(vit_traj[i], alpha, eps_final, req_consecutive)
             if tdr is not None: td_r.append(tdr)
             if tdv is not None: td_v.append(tdv)
-
             tabs_r[i] = t_abs_last_violation(res_traj[i], alpha, eps_final)
             tabs_v[i] = t_abs_last_violation(vit_traj[i], alpha, eps_final)
             viol_r[i] = violations_count(res_traj[i], alpha, eps_final)
             viol_v[i] = violations_count(vit_traj[i], alpha, eps_final)
 
-        reach_r = len(td_r) / N
-        reach_v = len(td_v) / N
+        reach_r = len(td_r) / N; reach_v = len(td_v) / N
         common = min(reach_r, reach_v)
-
-        td_r = np.array(td_r, dtype=np.float64)
-        td_v = np.array(td_v, dtype=np.float64)
-
         rows.append(dict(
-            alpha=float(alpha),
-            reach_resnet=float(reach_r),
-            reach_vit=float(reach_v),
-            common_reach=float(common),
-            reach_gap=float(reach_r - reach_v),
+            alpha=float(alpha), reach_resnet=float(reach_r), reach_vit=float(reach_v),
+            common_reach=float(common), reach_gap=float(reach_r - reach_v),
             tabs_gap=float(np.mean(tabs_r) - np.mean(tabs_v)),
             cohens_d_tabs=float(cohens_d(tabs_r.astype(np.float64), tabs_v.astype(np.float64))),
-            mean_viol_resnet=float(np.mean(viol_r)),
-            mean_viol_vit=float(np.mean(viol_v)),
+            mean_viol_resnet=float(np.mean(viol_r)), mean_viol_vit=float(np.mean(viol_v)),
             viol_gap=float(np.mean(viol_r) - np.mean(viol_v)),
-            n_td_resnet=int(len(td_r)),
-            n_td_vit=int(len(td_v)),
         ))
     return pd.DataFrame(rows)
 
 def pick_alpha_balanced(df, target_common=0.60, max_gap=0.06):
-    # 1) enforce fairness + common reach
     cand = df[(df["common_reach"] >= target_common) & (np.abs(df["reach_gap"]) <= max_gap)].copy()
-
-    # 2) fallback ladder if too strict (don’t stall the run)
-    if cand.empty:
-        cand = df[df["common_reach"] >= min(0.50, target_common)].copy()
-    if cand.empty:
-        cand = df.copy()
+    if cand.empty: cand = df[df["common_reach"] >= min(0.50, target_common)].copy()
+    if cand.empty: cand = df.copy()
 
     cand["abs_gap"] = np.abs(cand["reach_gap"])
     cand["abs_tabs_gap"] = np.abs(cand["tabs_gap"])
     cand["abs_d"] = np.abs(cand["cohens_d_tabs"])
     
-    # Sort by: common_reach desc, abs_gap asc, abs_tabs_gap desc, abs_d desc
+    # Selection priority: common_reach -> reach_gap -> tabs_gap -> effect_size
     cand = cand.sort_values(
         ["common_reach", "abs_gap", "abs_tabs_gap", "abs_d"],
         ascending=[False, True, False, False]
@@ -404,13 +385,12 @@ def pick_alpha_balanced(df, target_common=0.60, max_gap=0.06):
     return float(cand.iloc[0]["alpha"])
 
 # -------------------------
-# Falsifiers (Operating on Scalars)
+# Falsifiers (Scalar outcomes for cross-arch depth compatibility)
 # -------------------------
 def null_depth_permute(traj: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     N, L = traj.shape
     out = traj.copy()
-    for i in range(N):
-        out[i] = out[i, rng.permutation(L)]
+    for i in range(N): out[i] = out[i, rng.permutation(L)]
     return out
 
 def null_labelswap_from_tabs(tabs_r: np.ndarray, tabs_v: np.ndarray, rng: np.random.Generator):
@@ -424,8 +404,7 @@ def null_pooled_from_tabs(tabs_r: np.ndarray, tabs_v: np.ndarray, rng: np.random
     pool = np.concatenate([tabs_r, tabs_v], axis=0)
     perm = rng.permutation(pool.shape[0])
     N = len(tabs_r)
-    r = pool[perm[:N]]
-    v = pool[perm[N:2*N]]
+    r = pool[perm[:N]]; v = pool[perm[N:2*N]]
     return float(np.mean(r) - np.mean(v)), float(cohens_d(r, v))
 
 def eval_tabs_gap_d(res_traj, vit_traj, alpha, eps_final):
@@ -440,163 +419,108 @@ def run_one(run_id: int, seed: int, batch_probe: int, batch_traj: int):
     set_all_seeds(seed)
     device = torch.device(DEVICE)
 
-    probe_loader, traj_loader = make_loaders(
-        DATASET, DATA_ROOT,
-        PROBE_N, TRAJ_N,
-        batch_probe, batch_traj,
-        seed
-    )
+    probe_loader, traj_loader = make_loaders(DATASET, DATA_ROOT, PROBE_N, TRAJ_N, batch_probe, batch_traj, seed)
 
-    # ---- build and process models sequentially to reduce peak memory ----
     resnet = timm.create_model("resnet18", pretrained=True, num_classes=1000).to(device).eval()
     tr_r = HighFidelityTracker(resnet, "resnet")
     tr_r.train_probes(probe_loader, device, probe_epochs=PROBE_EPOCHS)
-    res_traj = collect_trajectories(tr_r, traj_loader, device)  # CPU numpy
+    res_traj = collect_trajectories(tr_r, traj_loader, device) 
 
-    del tr_r, resnet
-    cleanup_cuda()
+    del tr_r, resnet; cleanup_cuda()
 
     vit = timm.create_model("vit_tiny_patch16_224", pretrained=True, num_classes=1000).to(device).eval()
     tr_v = HighFidelityTracker(vit, "vit")
     tr_v.train_probes(probe_loader, device, probe_epochs=PROBE_EPOCHS)
-    vit_traj = collect_trajectories(tr_v, traj_loader, device)  # CPU numpy
+    vit_traj = collect_trajectories(tr_v, traj_loader, device)
 
-    del tr_v, vit
-    del probe_loader, traj_loader
-    cleanup_cuda()
+    del tr_v, vit, probe_loader, traj_loader; cleanup_cuda()
 
-    # alpha sweep + balanced pick
     alphas = np.linspace(ALPHA_LO, ALPHA_HI, ALPHA_STEPS)
     df_sweep = sweep_alphas(res_traj, vit_traj, alphas, EPS_FINAL, REQ_CONSEC)
     alpha = pick_alpha_balanced(df_sweep, TARGET_COMMON_REACH, MAX_REACH_GAP)
 
-    # save sweep
     sweep_path = os.path.join(OUTDIR, f"alpha_sweep_run_{run_id:03d}.csv")
     df_sweep.to_csv(sweep_path, index=False)
 
-    # per-sample metrics at chosen alpha
     N = res_traj.shape[0]
-    td_r = np.full(N, np.nan, dtype=np.float64); td_v = np.full(N, np.nan, dtype=np.float64)
     tabs_r = np.empty(N, dtype=np.float64); tabs_v = np.empty(N, dtype=np.float64)
     viol_r = np.empty(N, dtype=np.int32); viol_v = np.empty(N, dtype=np.int32)
+    td_r = np.full(N, np.nan, dtype=np.float64); td_v = np.full(N, np.nan, dtype=np.float64)
 
     for i in range(N):
-        tdr = t_d_persistence(res_traj[i], alpha, EPS_FINAL, REQ_CONSEC)
-        tdv = t_d_persistence(vit_traj[i], alpha, EPS_FINAL, REQ_CONSEC)
-        if tdr is not None: td_r[i] = tdr
-        if tdv is not None: td_v[i] = tdv
         tabs_r[i] = t_abs_last_violation(res_traj[i], alpha, EPS_FINAL)
         tabs_v[i] = t_abs_last_violation(vit_traj[i], alpha, EPS_FINAL)
         viol_r[i] = violations_count(res_traj[i], alpha, EPS_FINAL)
         viol_v[i] = violations_count(vit_traj[i], alpha, EPS_FINAL)
+        tdr = t_d_persistence(res_traj[i], alpha, EPS_FINAL, REQ_CONSEC)
+        tdv = t_d_persistence(vit_traj[i], alpha, EPS_FINAL, REQ_CONSEC)
+        if tdr is not None: td_r[i] = tdr
+        if tdv is not None: td_v[i] = tdv
 
     abs_path = os.path.join(OUTDIR, f"absorption_metrics_run_{run_id:03d}.csv")
-    pd.DataFrame({
-        "td_resnet": td_r, "td_vit": td_v,
-        "t_abs_resnet": tabs_r, "t_abs_vit": tabs_v,
-        "violations_resnet": viol_r, "violations_vit": viol_v,
-    }).to_csv(abs_path, index=False)
+    pd.DataFrame({"t_abs_resnet": tabs_r, "t_abs_vit": tabs_v, "violations_resnet": viol_r, "violations_vit": viol_v}).to_csv(abs_path, index=False)
 
-    # summary stats
-    reach_r = float(np.isfinite(td_r).mean()); reach_v = float(np.isfinite(td_v).mean())
-    common  = float(min(reach_r, reach_v))
-    gap_tabs = float(np.mean(tabs_r) - np.mean(tabs_v))
-    d_tabs   = float(cohens_d(tabs_r, tabs_v))
-    ci_tabs  = bootstrap_ci_gap(tabs_r, tabs_v, n_boot=BOOT_N, seed=seed)
+    reach_r = float(np.isfinite(td_r).mean()); reach_v = float(np.isfinite(td_v).mean()); common = min(reach_r, reach_v)
+    gap_tabs, d_tabs = float(np.mean(tabs_r) - np.mean(tabs_v)), float(cohens_d(tabs_r, tabs_v))
+    ci_tabs = bootstrap_ci_gap(tabs_r, tabs_v, n_boot=BOOT_N, seed=seed)
     gap_viol = float(np.mean(viol_r) - np.mean(viol_v))
-    ci_viol  = bootstrap_ci_gap(viol_r.astype(np.float64), viol_v.astype(np.float64), n_boot=BOOT_N, seed=seed+999)
+    ci_viol = bootstrap_ci_gap(viol_r.astype(np.float64), viol_v.astype(np.float64), n_boot=BOOT_N, seed=seed+99)
 
-    # falsifiers (Operating on scalar tabs_r, tabs_v)
     nulls = {}
     if DO_NULLS:
-        rng = np.random.default_rng(seed + 12345)
+        rng = np.random.default_rng(seed + 888)
         if NULL_DEPTHPERM:
-            rd = null_depth_permute(res_traj, rng); vd = null_depth_permute(vit_traj, rng)
-            g, d = eval_tabs_gap_d(rd, vd, alpha, EPS_FINAL)
-            nulls["depthperm_tabs_gap"] = g; nulls["depthperm_tabs_d"] = d
+            g, d = eval_tabs_gap_d(null_depth_permute(res_traj, rng), null_depth_permute(vit_traj, rng), alpha, EPS_FINAL)
+            nulls["depthperm_tabs_gap"], nulls["depthperm_tabs_d"] = g, d
         if NULL_LABELSWAP:
             g, d = null_labelswap_from_tabs(tabs_r, tabs_v, rng)
-            nulls["labelswap_tabs_gap"] = g; nulls["labelswap_tabs_d"] = d
+            nulls["labelswap_tabs_gap"], nulls["labelswap_tabs_d"] = g, d
         if NULL_POOLEDRESAMPLE:
             g, d = null_pooled_from_tabs(tabs_r, tabs_v, rng)
-            nulls["pooled_tabs_gap"] = g; nulls["pooled_tabs_d"] = d
+            nulls["pooled_tabs_gap"], nulls["pooled_tabs_d"] = g, d
 
-    # boundary spec json (per run)
+    # REPRODUCIBILITY SPEC (Consistent with 02B conventions)
     spec = {
-        "run_id": int(run_id), "seed": int(seed), "dataset": DATASET,
-        "alpha_pick_mode": "balanced_reach", "alpha": float(alpha),
+        "run_id": int(run_id), "seed": int(seed), "alpha": float(alpha),
+        "alpha_grid": [float(ALPHA_LO), float(ALPHA_HI), int(ALPHA_STEPS)],
+        "balanced_reach": {"target_common_reach": float(TARGET_COMMON_REACH), "max_reach_gap": float(MAX_REACH_GAP)},
+        "eps_final_margin": float(EPS_FINAL), "req_consecutive": int(REQ_CONSEC),
+        "probe_n": int(PROBE_N), "traj_n": int(TRAJ_N), "probe_epochs": int(PROBE_EPOCHS),
         "summary": {
             "reach_resnet": reach_r, "reach_vit": reach_v, "common_reach": common,
             "t_abs_gap_R_minus_V": gap_tabs, "t_abs_d_R_minus_V": d_tabs,
             "t_abs_gap_ci95": [float(ci_tabs[0]), float(ci_tabs[1])],
             "viol_gap_R_minus_V": gap_viol, "viol_gap_ci95": [float(ci_viol[0]), float(ci_viol[1])],
         },
-        "nulls": nulls
+        "nulls": nulls,
+        "artifacts": {"alpha_sweep_csv": os.path.basename(sweep_path), "absorption_metrics_csv": os.path.basename(abs_path)}
     }
     with open(os.path.join(OUTDIR, f"boundary_spec_run_{run_id:03d}.json"), "w") as f:
         json.dump(spec, f, indent=2)
 
-    row = dict(
-        run_id=int(run_id), seed=int(seed), alpha=float(alpha),
-        reach_resnet=reach_r, reach_vit=reach_v, common_reach=common,
-        t_abs_gap_R_minus_V=gap_tabs, t_abs_d_R_minus_V=d_tabs,
-        t_abs_ci95_low=float(ci_tabs[0]), t_abs_ci95_high=float(ci_tabs[1]),
-        viol_gap_R_minus_V=gap_viol, viol_ci95_low=float(ci_viol[0]), viol_ci95_high=float(ci_viol[1]),
-        **nulls
-    )
-    return row
+    return dict(run_id=run_id, seed=seed, alpha=alpha, common_reach=common, t_abs_gap_R_minus_V=gap_tabs, t_abs_d_R_minus_V=d_tabs, **nulls)
 
 # -------------------------
-# MAIN LOOP (time-boxed)
+# MAIN LOOP
 # -------------------------
-# REMOVED global torch.set_grad_enabled(False) to ensure tr.train_probes works sequentially.
-
 start = time.time()
 rows = []
 batch_probe = BATCH_PROBE; batch_traj = BATCH_TRAJ
 
-def print_live_summary(df):
-    cols = ["run_id","seed","alpha","common_reach","t_abs_gap_R_minus_V","t_abs_d_R_minus_V","viol_gap_R_minus_V"]
-    print("\n=== SUMMARY (so far) ===")
-    print(df[cols].to_string(index=False))
-    dir_tabs = int((df["t_abs_gap_R_minus_V"] < 0).sum()); dir_viol = int((df["viol_gap_R_minus_V"] < 0).sum())
-    print(f"\nDirection checks: t_abs_gap<0 count: {dir_tabs}/{len(df)} | viol_gap<0 count: {dir_viol}/{len(df)}")
-    if "depthperm_tabs_d" in df.columns:
-        print(f"Null(depthperm) mean d: {df['depthperm_tabs_d'].mean():.3f} (should ~0)")
-    if "labelswap_tabs_d" in df.columns:
-        print(f"Null(labelswap) mean d: {df['labelswap_tabs_d'].mean():.3f} (should ~0)")
-    if "pooled_tabs_d" in df.columns:
-        print(f"Null(pooled)    mean d: {df['pooled_tabs_d'].mean():.3f} (should ~0)")
-
 run_id = 0
-while True:
-    elapsed_min = (time.time() - start) / 60.0
-    if elapsed_min >= RUN_MINUTES or run_id >= RUNS_MAX:
-        break
-
+while (time.time() - start)/60.0 < RUN_MINUTES and run_id < RUNS_MAX:
     run_id += 1
     seed = SEED_START + (run_id - 1)
-    print(f"\n=== Run {run_id} | seed={seed} | batches probe={batch_probe}, traj={batch_traj} | elapsed={elapsed_min:.1f} min ===")
-    
+    print(f"\n=== Run {run_id} | seed={seed} | elapsed={(time.time()-start)/60.0:.1f} min ===")
     try:
         row = run_one(run_id, seed, batch_probe, batch_traj)
         rows.append(row)
-        df = pd.DataFrame(rows)
-        df.to_csv(os.path.join(OUTDIR, "runs_summary.csv"), index=False)
-        print(f"alpha={row['alpha']:.3f} | common_reach={row['common_reach']:.3f} | t_abs_gap(R-V)={row['t_abs_gap_R_minus_V']:.3f} | d={row['t_abs_d_R_minus_V']:.3f}")
-
-        if run_id % 10 == 0:
-            print_live_summary(df)
-
-    except torch.cuda.OutOfMemoryError as e:
-        print("\n[OOM] CUDA out of memory. Shrinking batch sizes.")
-        cleanup_cuda()
-        batch_probe = max(8, batch_probe // 2); batch_traj = max(8, batch_traj // 2)
+        pd.DataFrame(rows).to_csv(os.path.join(OUTDIR, "runs_summary.csv"), index=False)
+        print(f"alpha={row['alpha']:.3f} | gap={row['t_abs_gap_R_minus_V']:.3f} | d={row['t_abs_d_R_minus_V']:.3f}")
+    except torch.cuda.OutOfMemoryError:
+        print("[OOM] Shrinking batches."); cleanup_cuda()
+        batch_probe = max(8, batch_probe//2); batch_traj = max(8, batch_traj//2)
         continue
-    except Exception as e:
-        print("\n[ERROR] stopping due to exception:", repr(e))
-        break
+    except Exception as e: print("[ERROR]:", e); break
 
-df = pd.DataFrame(rows)
-if len(df): print_live_summary(df)
 print("\nSaved:", os.path.join(OUTDIR, "runs_summary.csv"))

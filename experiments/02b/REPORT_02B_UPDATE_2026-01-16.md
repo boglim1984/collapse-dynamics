@@ -58,7 +58,10 @@ To provide a more rigorous null baseline, we have replaced sample-shuffling with
 2. **Pooled-Resample Null**: Build a pooled set of all trajectories and randomly assign them into two new groups of size $N$. This destroys the architectural identity of the samples.
 
 > [!NOTE]
-> **Implementation Update**: Balanced-reach 1hr script: falsifiers updated to operate on scalar $t_{abs}$ because ResNet $L=8$ vs ViT $L=12$; fixed autograd mode so probe training works under Colab.
+> **Implementation Update**: 
+> - **Fixed probe-training autograd**: Removed global grad disable; probe updates now run under `enable_grad` for successful distillation.
+> - **Cross-depth Falsifiers**: Falsifiers (`labelswap` and `pooled`) now operate on scalar $t_{abs}$ outcomes rather than trajectories. This handles the model depth discrepancy (ResNet $L=8$ vs ViT $L=12$) and prevents shape-mismatch crashes.
+> - **Expanded Spec**: Boundary spec JSON now includes the full alpha grid, balanced-reach parameters, and artifact pointers for enhanced reproducibility.
 
 ---
 
