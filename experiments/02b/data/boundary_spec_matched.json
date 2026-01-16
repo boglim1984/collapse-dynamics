@@ -1,0 +1,22 @@
+{
+    "boundary_mode": "Matched-Reach (Shared-Alpha)",
+    "criterion_type": "Relative",
+    "alpha": 0.89,
+    "target_common_reach": 0.43,
+    "persistence_window": 2,
+    "req_consecutive": 3,
+    "eps_final_margin": 0.001,
+    "observed_reach": {
+        "resnet": 0.95,
+        "vit": 0.43,
+        "reach_gap_R_minus_V": 0.52
+    },
+    "observed_td": {
+        "mean_resnet": 0.035789473684210524,
+        "mean_vit": 0.2295983086680761,
+        "td_gap_R_minus_V": -0.19380883498386559,
+        "cohens_d": 1.071314602411116,
+        "n_td_resnet": 475,
+        "n_td_vit": 215
+    }
+}

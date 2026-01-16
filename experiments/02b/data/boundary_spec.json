@@ -1,0 +1,13 @@
+{
+    "boundary_mode": "Mode A (Per-Arch)",
+    "criterion_type": "Relative",
+    "persistence_window": 2,
+    "req_consecutive": 3,
+    "parameter_str": "Alpha=0.95",
+    "parameter_value": 0.95,
+    "reach_band_used": {
+        "low": 0.2,
+        "high": 0.95
+    },
+    "eps_final_margin": 0.001
+}

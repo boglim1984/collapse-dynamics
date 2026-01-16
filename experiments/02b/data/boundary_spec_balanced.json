@@ -1,0 +1,29 @@
+{
+  "study": "Collapse Dynamics",
+  "experiment": "02B",
+  "selection_method": "Balanced-Reach Constrained (Relative)",
+  "criterion_type": "Relative",
+  "alpha_selected": 0.5,
+  "persistence_window": 2,
+  "req_consecutive": 3,
+  "eps_final_margin": 0.001,
+  "min_common_reach": 0.25,
+  "gap_limits_tested": [
+    0.1,
+    0.15,
+    0.2
+  ],
+  "gap_limit_used": null,
+  "stats": {
+    "reach_resnet": 0.988,
+    "reach_vit": 0.636,
+    "common_reach": 0.636,
+    "reach_gap": 0.352,
+    "mean_td_resnet": 0.024002313475997683,
+    "mean_td_vit": 0.20611778158947971,
+    "td_gap": -0.18211546811348203,
+    "cohens_d": 0.9977482871173383,
+    "n_td_resnet": 494,
+    "n_td_vit": 318
+  }
+}

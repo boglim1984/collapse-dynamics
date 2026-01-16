@@ -1,0 +1,18 @@
+{
+  "selection_method": "Paired-Subset (Relative)",
+  "alpha_selected": 0.5,
+  "min_paired_reach": 0.25,
+  "persistence_window": 2,
+  "req_consecutive": 3,
+  "eps_final_margin": 0.001,
+  "stats": {
+    "paired_reach": 0.626,
+    "n_paired": 313,
+    "reach_resnet": 0.988,
+    "reach_vit": 0.636,
+    "mean_td_resnet_paired": 0.024189867640346873,
+    "mean_td_vit_paired": 0.20679639848968925,
+    "td_gap_paired": -0.1826065308493424,
+    "cohens_d_paired": 0.9014083963329861
+  }
+}
