@@ -79,17 +79,45 @@ To prevent the CUDA OOM crashes observed in long-runs, the `exp02b_absorbing_bou
 - **Autocast**: Mixed-precision (fp16) logic for trajectory projections.
 - **Teardown**: Explicit per-run cleanup (`del`, `gc.collect()`, `empty_cache`).
 
+> [!IMPORTANT]
+> **Known Pitfalls & UX**:
+> - **Colab Cell Order**: The setup/definitions cell MUST be run before any downstream collection cells to avoid `NameError` on `HighFidelityTracker`.
+> - **Python Syntax**: Avoid copying natural-language headers (e.g., those containing em-dashes '—') directly into Python cells as they cause `SyntaxError`.
+> - **Argparse / Jupyter**: The harness is designed for CLI; if running in a notebook, use `parse_known_args()` to avoid conflicts with the Jupyter `-f` kernel flag.
+
 ---
 
-## 5. Summary & Conclusions
-- **What Changed**: We transitioned from first-dominance ($t_d$) to **Absorption Time ($t_{abs}$)** as the primary stability metric to account for late-stage "flicker" and absorbing boundaries.
-- **Key Result**: Directionality is robustly consistent across 60 seeds. ResNet consistently reaches stable categorical absorption earlier and with fewer violations than ViT under balanced reach ($c \approx 0.60$).
-- **Effect Sizes**: Large architectural separation ($d \approx -0.9$) persists regardless of seed or sample pairing (unless architectural identity is destroyed).
-- **Limitations**: GPU OOM risk is present; the harness now includes explicit mitigations.
-- **Next Step**: The current dataset is sufficient to claim architectural separation in categorical stability. Future work will focus on Experiment 03 (irreversibility horizons).
+## 5. Conclusion / What We Learned
 
-## Artifacts (2026-01-16)
-- **Canonical Summary**: `experiments/02b/data/stability_runs.csv`
-- **Absorption Metrics**: `experiments/02b/data/absorption_time_metrics.csv`
-- **Boundary Spec**: `experiments/02b/data/boundary_spec_balanced.json`
-- **Canonical Harness**: `docs/experiments/02b/colab_harness_1hr.py`
+The "Lock + Publish" pass for Experiment 02B has frozen the following core findings:
+
+### Core Finding (Absorbing Boundary / $t_{abs}$)
+Using **Absorption Time ($t_{abs}$)** as the primary measure of decision stability at $\alpha=0.70$:
+- **ResNet**: mean $t_{abs}=0.477$, median $=0.714$, mean violations $=0.9$
+- **ViT**: mean $t_{abs}=0.836$, median $=1.000$, mean violations $=6.0$
+- **Architectural Gap**: $\Delta(R-V) = -0.360$
+- **Effect Size**: Cohen’s $d \approx -0.934$ (Large Effect)
+
+**Interpretation**: ResNet reaches and maintains its final-margin dominance threshold substantially earlier than ViT. ViT exhibits significantly more "flicker" and late-stage violations, indicating a more volatile collapse toward the categorical decision.
+
+### Robustness & Falsification
+- **1-Hour Multi-Run Scan**: Verified across 60 seeds ($\alpha \in [0.55, 0.67]$). Directionality was consistent in **60/60** runs ($t_{abs}\text{\_gap} < 0$).
+- **Falsifiers**:
+    - **Depth-Permute (PASSED)**: Mean $d \approx -0.099$. Sequence destruction correctly collapses the effect.
+    - **Sample-Shuffle / Pooled (FAILED)**: Mean $d \approx -0.903$. Failure to collapse suggests population-level distributional asymmetries are preserved even when pairings are broken. 
+
+### Why $t_{abs}$ Is Superior
+$t_{abs}$ is **late-snap safe**. Unlike "k consecutive layers" metrics, it defines the earliest depth *after the last* dominance violation. This avoids edge artifacts and captures the true "point of no return" for a stable prediction.
+
+---
+
+**Experiment 02B is now frozen. Research moves to 02C (Irreversibility Horizons).**
+
+## Artifacts (Canonical & Tracked)
+- **Harness**: [docs/experiments/02b/colab_harness_1hr.py](file:///Users/oflahertys/Documents/Dev/Experiments/collapse-dynamics/docs/experiments/02b/colab_harness_1hr.py)
+- **Summary Metrics**: `experiments/02b/data/stability_runs.csv`
+- **Absorption Data**: `experiments/02b/data/absorption_time_metrics.csv`
+- **Reproducibility Spec**: `experiments/02b/data/boundary_spec_balanced.json`
+- **Auxiliary Artifacts**: `experiments/02b/data/boundary_spec_*.json`, `matched_alpha_sweep.csv`, `download.png`.
+
+**Reproduction**: To reproduce, run the canonical harness in a T4 Colab environment with `alpha=0.70` and `Balanced Reach` enabled.

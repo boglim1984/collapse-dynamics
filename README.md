@@ -84,11 +84,14 @@ Quantifying the point-of-no-return in the inference process where the transition
 
 *Comparison of reach rates and commitment depth (t_d) across ResNet and ViT. Locked boundary (Alpha=0.95) reveals significantly different commitment profiles.*
 
-- **Finding**: ResNet commits very early ($t_d \approx 0.037$) with high reach, while ViT commits later ($t_d \approx 0.232$).
-- **Multi-Metric Stability**: 60-seed long-run confirms $t_{abs}$ (absorption time) gap $\approx -0.360$ (ResNet earlier) and violation gap (ViT higher jitter).
-- **Falsifier Status**: Depth-permute verified ($d \approx 0$); Sample-shuffle marked as invalid/weak; Pooled-resample and Label-swap nulls implemented in harness.
-- **Reports**: [Consolidated Analysis](docs/exp02b_report.md) | [2026-01-16 Update](experiments/02b/REPORT_02B_UPDATE_2026-01-16.md)
 - **Artifacts**: [boundary_spec_balanced.json](experiments/02b/data/boundary_spec_balanced.json), [stability_runs.csv](experiments/02b/data/stability_runs.csv)
+
+#### Experiment 02B Result Snapshot
+- **Primary Metric**: $\Delta t_{abs}$ (Absorption Time Gap) $= -0.360$ (ResNet earlier commit).
+- **Effect Size**: Cohen’s $d \approx -0.934$ (Large separation).
+- **Robustness**: **60/60** runs showed consistent directionality (ResNet stable earlier).
+- **Falsifiers**: **Depth-Permute** passed (collapsed effect); **Sample-Shuffle** failed (known issue).
+- **Full Report**: [REPORT_02B_UPDATE_2026-01-16.md](experiments/02b/REPORT_02B_UPDATE_2026-01-16.md)
 
 ---
 
