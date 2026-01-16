@@ -40,6 +40,16 @@ Defining reachable decision commitment thresholds to ensure cross-model comparab
 - **Settings**: Alpha=0.60 (Balanced Reach / Balanced Gap selection)
 - **Status**: Falsifiers verified; OOM-hardened.
 
+### Experiment 02C — Irreversibility Horizon (Floating Threshold)
+Probing the point-of-no-return using a dynamic threshold approach.
+- **Results**: [experiments/02c/README.md](experiments/02c/README.md)
+- **Status**: Findings washed out (escape $\approx$ null); motivated 02D.
+
+### Experiment 02D — Fixed-Threshold Basin Wall (Instrument-Complete)
+Measuring "Time-To-Escape" (TTE) using a rigid wall to quantify differential fragility.
+- **Results**: [experiments/02d/README.md](experiments/02d/README.md)
+- **Status**: TTE confirmed as a high-resolution fragility signal.
+
 ### Experiment 03 — Irreversibility Horizon (Planned)
 Quantifying the point-of-no-return in the inference process where the transition from representation to classification becomes informationally irreversible.
 
@@ -91,6 +101,15 @@ Quantifying the point-of-no-return in the inference process where the transition
 - **Robustness**: **60/60** runs confirmed ResNet absorbs earlier than ViT.
 - **Falsification**: **Depth-Permute** passed; **Sample-Shuffle** failed (known limitation).
 - **Report**: [REPORT_02B_UPDATE_2026-01-16.md](experiments/02b/REPORT_02B_UPDATE_2026-01-16.md)
+
+---
+
+### Experiment 02C/D — Irreversibility & TTE
+
+- **Finding (02C)**: Floating thresholds are too permissive; escape rates match null expectations ($|d| \approx 0$).
+- **Finding (02D)**: Fixed walls reveal that while escape *rates* are similar, **Time-To-Escape (TTE)** is lower for ViT (ResNet 1.71 vs ViT 0.67).
+- **Interpretation**: ViT is more "brittle" once its basin wall is breached—it collapses to the wrong decision significantly faster than ResNet.
+- **Details**: [Exp 02C README](experiments/02c/README.md) | [Exp 02D README](experiments/02d/README.md)
 
 ---
 
