@@ -7,7 +7,7 @@
 ## Reproduce in Colab (1 hour)
 - **Environment**: Open Google Colab (GPU: T4 or better).
 - **Setup**: `!pip -q install timm`
-- **Run**: Execute the canonical harness at: [docs/experiments/02b/colab_harness_1hr.py](file:///Users/oflahertys/Documents/Dev/Experiments/collapse-dynamics/docs/experiments/02b/colab_harness_1hr.py)
+- **Run**: Execute the canonical harness at: docs/experiments/02b/colab_harness_1hr.py
 - **Outputs**: Written to `exp02b_*` timestamped folders:
   - `runs_summary.csv`: Aggregate statistics over seeds.
   - `boundary_spec_run_###.json`: Full reproducibility parameters.
@@ -54,11 +54,11 @@ We executed a stability harness for ~1 hour on Colab to verify consistent direct
 The falsifier battery was expanded to test the robustness of the architectural separation:
 
 - **Depth-Permute Null (VALID)**: Mean $d \approx -0.099$. Destroying the layer-order sequence collapses the effect toward zero, confirming that the directional gap depends on the sequential evolution of features.
-- **Label-Swap / Pooled Nulls (VALID)**: These falsifiers operate on scalar $t_{abs}$ outcomes. By destroying architectural identity, they collapse the effect toward zero.
-- **Sample-Shuffle Null (INVALID/WEAK)**: Mean $d \approx -0.903$. Markedly failed to collapse the effect.
+- **Sample-Shuffle Null (FAILED / INVALID)**: Mean $d \approx -0.903$. This falsifier failed to collapse the effect. It preserves architecture-specific marginal distributions, meaning population-level differences persist even when individual pairings are broken.
+- **Label-Swap / Pooled Nulls (FAILED / INCONCLUSIVE)**: In current long-runs, these also produced large effect sizes ($d \approx -0.9$). As currently implemented, they do not successfully destroy the architectural signal or are confounded by distributional asymmetries.
 
 > [!CAUTION]
-> **Sample-Shuffle** is currently marked as an **invalid falsifier**. It preserves the architecture-specific marginal distributions (population properties), meaning population-level differences persist even when individual pairings are broken. Only **Depth-Permute**, **Label-Swap**, and **Pooled-Resample** are considered valid stress tests for this claim.
+> **Falsifier Status**: Only **Depth-Permute** is currently considered a valid/passing stress test. **Sample-Shuffle**, **Label-Swap**, and **Pooled-Resample** are marked as **FAILED / Invalid** as implemented, as they do not successfully collapse the observed architecture-level separation.
 
 ---
 
@@ -113,11 +113,21 @@ $t_{abs}$ is **late-snap safe**. Unlike "k consecutive layers" metrics, it defin
 
 **Experiment 02B is now frozen. Research moves to 02C (Irreversibility Horizons).**
 
-## Artifacts (Canonical & Tracked)
-- **Harness**: [docs/experiments/02b/colab_harness_1hr.py](file:///Users/oflahertys/Documents/Dev/Experiments/collapse-dynamics/docs/experiments/02b/colab_harness_1hr.py)
-- **Summary Metrics**: `experiments/02b/data/stability_runs.csv`
-- **Absorption Data**: `experiments/02b/data/absorption_time_metrics.csv`
-- **Reproducibility Spec**: `experiments/02b/data/boundary_spec_balanced.json`
-- **Auxiliary Artifacts**: `experiments/02b/data/boundary_spec_*.json`, `matched_alpha_sweep.csv`, `download.png`.
+---
 
-**Reproduction**: To reproduce, run the canonical harness in a T4 Colab environment with `alpha=0.70` and `Balanced Reach` enabled.
+## 6. Freeze Summary
+- **02B Freeze Status**: **Frozen**
+- **Primary Claim**: $t_{abs}$ gap (R−V) is robustly negative and large ($d \approx -0.934$) at $\alpha=0.70$.
+- **Robustness**: Stable directionality in **60/60** runs of the 1-hour scan.
+- **Passing Falsifier**: **Depth-Permute** (collapses to $d \approx -0.1$).
+- **Non-Passing Falsifiers**: **Sample-Shuffle**, **Label-Swap**, and **Pooled-Resample** failed to collapse the effect ($d \approx -0.9$); they are currently considered invalid nulls as implemented.
+
+## Artifacts (Canonical & Tracked)
+- **Harness**: docs/experiments/02b/colab_harness_1hr.py
+- **Calibration**: experiments/02b/exp02b_absorbing_boundary_calibration.py
+- **Summary Metrics**: experiments/02b/data/stability_runs.csv
+- **Absorption Data**: experiments/02b/data/absorption_time_metrics.csv
+- **Reproducibility Spec**: experiments/02b/data/boundary_spec_balanced.json
+- **Auxiliary Artifacts**: experiments/02b/data/boundary_spec_*.json, matched_alpha_sweep.csv, download.png.
+
+**Reproduction**: To reproduce, run the canonical harness `docs/experiments/02b/colab_harness_1hr.py` in a T4 Colab environment. Ensure the definitions cell is run first to avoid `NameError`.
