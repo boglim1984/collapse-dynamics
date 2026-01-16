@@ -177,19 +177,29 @@ class HighFidelityTracker:
         return fn
 
     def _register_hooks(self):
+        temp_order = []
         if self.arch_type == "resnet":
             for name, module in self.model.named_modules():
                 parts = name.split(".")
                 if len(parts) == 2 and "layer" in parts[0] and parts[1].isdigit():
                     if "conv" not in name:
                         self.hooks.append(module.register_forward_hook(self._hook_fn(name)))
+                        temp_order.append(name)
+            # Sort ResNet: layer idx then block idx
+            temp_order.sort(key=lambda k: int(k.split(".")[0][-1])*100 + int(k.split(".")[1]))
         elif self.arch_type == "vit":
             for name, module in self.model.named_modules():
                 parts = name.split(".")
                 if len(parts) == 2 and "blocks" in parts[0] and parts[1].isdigit():
                     self.hooks.append(module.register_forward_hook(self._hook_fn(name)))
+                    temp_order.append(name)
+            # Sort ViT: block idx
+            temp_order.sort(key=lambda k: int(k.split(".")[1]))
         else:
             raise ValueError("unknown arch_type")
+        
+        # FREEZE order once
+        self.layer_order = temp_order
 
     def clear(self):
         self.activations = {}
@@ -197,18 +207,7 @@ class HighFidelityTracker:
     def forward(self, x):
         self.clear()
         _ = self.model(x)
-
-        if self.arch_type == "resnet":
-            def key(k):
-                layer_idx = int(k.split(".")[0][-1])
-                block_idx = int(k.split(".")[1])
-                return layer_idx*100 + block_idx
-            self.layer_order = sorted(self.activations.keys(), key=key)
-        else:
-            def key(k):
-                return int(k.split(".")[1])
-            self.layer_order = sorted(self.activations.keys(), key=key)
-
+        assert all(name in self.activations for name in self.layer_order), "Missing activations for frozen layer order"
         return [self.activations[k] for k in self.layer_order]
 
     def get_rep(self, h):
@@ -275,15 +274,8 @@ def batch_margin(logits: torch.Tensor) -> torch.Tensor:
 
 @torch.no_grad()
 def collect_trajectories(tracker: HighFidelityTracker, loader, device) -> np.ndarray:
-    # Determine L first
-    x0, _ = next(iter(loader))
-    x0 = x0.to(device, non_blocking=True)
-    with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
-        acts0 = tracker.forward(x0)
-        logits0 = tracker.project_layer_logits(acts0)
-        L = len(logits0)
-    del x0, acts0, logits0
-
+    # FIXED: L is frozen based on tracker identity
+    L = len(tracker.layer_order)
     N = len(loader.dataset)
     out = np.empty((N, L), dtype=np.float32)
 
@@ -294,6 +286,7 @@ def collect_trajectories(tracker: HighFidelityTracker, loader, device) -> np.nda
             acts = tracker.forward(x)
             logits_layers = tracker.project_layer_logits(acts)
             margins = torch.stack([batch_margin(z) for z in logits_layers], dim=1)  # (B,L)
+            assert margins.shape[1] == L, f"L mismatch: expected {L} but got {margins.shape[1]}"
         
         b = margins.shape[0]
         out[write_i:write_i+b] = margins.float().cpu().numpy()

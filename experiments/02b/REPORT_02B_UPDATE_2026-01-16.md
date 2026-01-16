@@ -60,7 +60,8 @@ To provide a more rigorous null baseline, we have replaced sample-shuffling with
 > [!NOTE]
 > **Implementation Update**: 
 > - **Fixed probe-training autograd**: Removed global grad disable; probe updates now run under `enable_grad` for successful distillation.
-> - **Cross-depth Falsifiers**: Falsifiers (`labelswap` and `pooled`) now operate on scalar $t_{abs}$ outcomes rather than trajectories. This handles the model depth discrepancy (ResNet $L=8$ vs ViT $L=12$) and prevents shape-mismatch crashes.
+> - **Shape Mismatch Fix**: `HighFidelityTracker` now freezes `layer_order` at initialization. This prevents shape mismatch errors during trajectory collection (ResNet $L=8$ vs ViT $L=12$).
+> - **Cross-depth Falsifiers**: Falsifiers (`labelswap` and `pooled`) operate on scalar $t_{abs}$ outcomes, ensuring compatibility across different model architectures.
 > - **Expanded Spec**: Boundary spec JSON now includes the full alpha grid, balanced-reach parameters, and artifact pointers for enhanced reproducibility.
 
 ---
