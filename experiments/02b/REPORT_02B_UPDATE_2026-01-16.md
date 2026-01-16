@@ -57,6 +57,9 @@ To provide a more rigorous null baseline, we have replaced sample-shuffling with
 1. **Label-Swap Null**: Randomly swap ResNet and ViT trajectories within each paired sample ($p=0.5$). This should collapse both sign and magnitude toward 0.
 2. **Pooled-Resample Null**: Build a pooled set of all trajectories and randomly assign them into two new groups of size $N$. This destroys the architectural identity of the samples.
 
+> [!NOTE]
+> **Implementation Update**: Falsifiers have been updated in the stability harness to operate on scalar outcomes ($t_{abs}$) rather than full trajectories. This allows for fair comparison even when model depths differ (e.g., ResNet $L=8$ vs ViT $L=12$), preventing invalid cross-architecture trajectory swaps and shape-mismatch errors.
+
 ---
 
 ## 4. Stability Harness (OOM Hardening Patch)

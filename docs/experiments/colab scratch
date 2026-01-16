@@ -1,0 +1,669 @@
+# ================================================================
+# Experiment 02B — 1-Cell Colab Long-Run (Balanced-Reach + t_abs + Falsifiers)
+# Goals:
+#  - run ~1 hour (time-boxed) and keep saving artifacts as it goes
+#  - use absorption time t_abs (last-violation) as the primary stability metric
+#  - pick alpha per run using a "balanced reach" constraint (paired / fair)
+#  - run falsifiers that are actually meaningful:
+#       (1) depth-permute (should collapse toward ~0)
+#       (2) label-swap per sample (should collapse toward ~0)
+#       (3) pooled-resample (should collapse toward ~0)
+#  - OOM hardened: smaller batches, amp, explicit cleanup, cache flush
+# ================================================================
+
+import os, sys, time, json, math, gc, warnings
+warnings.filterwarnings("ignore")
+
+# ---- OOM / allocator hardening (helps fragmentation) ----
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+
+import numpy as np
+import pandas as pd
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision
+import torchvision.transforms as transforms
+from tqdm.auto import tqdm
+
+# ---- timm install ----
+try:
+    import timm
+except ImportError:
+    !pip -q install timm
+    import timm
+
+# -------------------------
+# CONFIG (edit these)
+# -------------------------
+RUN_MINUTES = 60.0              # time box
+RUNS_MAX = 999999               # safety cap
+SEED_START = 123
+
+DATASET = "cifar10"             # "cifar10" or "cifar100"
+DATA_ROOT = "./data"
+
+PROBE_N = 500
+TRAJ_N  = 500
+
+# start conservative; script can auto-reduce if OOM
+BATCH_PROBE = 32
+BATCH_TRAJ  = 32
+
+PROBE_EPOCHS = 3
+
+EPS_FINAL = 1e-3
+REQ_CONSEC = 3                  # for t_d "reach"
+
+# alpha sweep grid
+ALPHA_LO = 0.50
+ALPHA_HI = 0.98
+ALPHA_STEPS = 49
+
+# Balanced-reach selection constraint:
+TARGET_COMMON_REACH = 0.60      # chosen to be "strong-but-realistic" given your 1hr run (~0.55–0.67)
+MAX_REACH_GAP = 0.06            # enforce fairness (reach_resnet ~= reach_vit)
+
+# Falsifier settings
+DO_NULLS = True
+NULL_DEPTHPERM = True
+NULL_LABELSWAP = True
+NULL_POOLEDRESAMPLE = True
+
+BOOT_N = 600                    # bootstrap CI per run (kept modest for runtime)
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print("device:", DEVICE)
+
+# Output folder
+STAMP = time.strftime("%Y%m%d_%H%M%S")
+OUTDIR = f"exp02b_balanced_1hr_{STAMP}"
+os.makedirs(OUTDIR, exist_ok=True)
+print("OUTDIR:", OUTDIR)
+
+# -------------------------
+# Utils
+# -------------------------
+def set_all_seeds(seed: int):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+def cohens_d(a: np.ndarray, b: np.ndarray) -> float:
+    a = a[np.isfinite(a)]
+    b = b[np.isfinite(b)]
+    if len(a) < 2 or len(b) < 2:
+        return float("nan")
+    v1 = np.var(a, ddof=1); v2 = np.var(b, ddof=1)
+    pooled = ((len(a)-1)*v1 + (len(b)-1)*v2) / max((len(a)+len(b)-2), 1)
+    s = float(np.sqrt(pooled))
+    if s < 1e-12:
+        return float("nan")
+    return float((np.mean(a) - np.mean(b)) / s)
+
+def bootstrap_ci_gap(a: np.ndarray, b: np.ndarray, n_boot: int, seed: int) -> tuple:
+    rng = np.random.default_rng(seed)
+    a = a[np.isfinite(a)]
+    b = b[np.isfinite(b)]
+    if len(a) == 0 or len(b) == 0:
+        return (float("nan"), float("nan"))
+    gaps = []
+    for _ in range(n_boot):
+        aa = a[rng.integers(0, len(a), len(a))]
+        bb = b[rng.integers(0, len(b), len(b))]
+        gaps.append(float(np.mean(aa) - np.mean(bb)))
+    gaps = np.array(gaps, dtype=np.float64)
+    return (float(np.percentile(gaps, 2.5)), float(np.percentile(gaps, 97.5)))
+
+def cleanup_cuda():
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+# -------------------------
+# CIFAR loaders (paired indices)
+# -------------------------
+def make_loaders(dataset: str, data_root: str, probe_n: int, traj_n: int,
+                 batch_probe: int, batch_traj: int, seed: int):
+    tfm = transforms.Compose([
+        transforms.Resize((224,224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]),
+    ])
+    if dataset.lower() == "cifar10":
+        ds = torchvision.datasets.CIFAR10(root=data_root, train=False, download=True, transform=tfm)
+    elif dataset.lower() == "cifar100":
+        ds = torchvision.datasets.CIFAR100(root=data_root, train=False, download=True, transform=tfm)
+    else:
+        raise ValueError("dataset must be cifar10 or cifar100")
+
+    rng = np.random.default_rng(seed)
+    idx = rng.permutation(len(ds))
+    probe_idx = idx[:probe_n]
+    traj_idx  = idx[probe_n:probe_n+traj_n]
+
+    probe_loader = torch.utils.data.DataLoader(
+        torch.utils.data.Subset(ds, probe_idx),
+        batch_size=batch_probe, shuffle=True, num_workers=2, pin_memory=True
+    )
+    traj_loader = torch.utils.data.DataLoader(
+        torch.utils.data.Subset(ds, traj_idx),
+        batch_size=batch_traj, shuffle=False, num_workers=2, pin_memory=True
+    )
+    return probe_loader, traj_loader
+
+# -------------------------
+# Tracker
+# -------------------------
+class HighFidelityTracker:
+    def __init__(self, model, arch_type: str):
+        self.model = model
+        self.arch_type = arch_type  # "resnet" | "vit"
+        self.activations = {}
+        self.layer_order = []
+        self.probes = {}
+        self.hooks = []
+        self.norm = getattr(self.model, "norm", None) if self.arch_type == "vit" else None
+        self._register_hooks()
+
+    def _hook_fn(self, name):
+        def fn(module, inp, out):
+            out = out[0] if isinstance(out, tuple) else out
+            self.activations[name] = out
+        return fn
+
+    def _register_hooks(self):
+        if self.arch_type == "resnet":
+            for name, module in self.model.named_modules():
+                parts = name.split(".")
+                if len(parts) == 2 and "layer" in parts[0] and parts[1].isdigit():
+                    if "conv" not in name:
+                        self.hooks.append(module.register_forward_hook(self._hook_fn(name)))
+        elif self.arch_type == "vit":
+            for name, module in self.model.named_modules():
+                parts = name.split(".")
+                if len(parts) == 2 and "blocks" in parts[0] and parts[1].isdigit():
+                    self.hooks.append(module.register_forward_hook(self._hook_fn(name)))
+        else:
+            raise ValueError("unknown arch_type")
+
+    def clear(self):
+        self.activations = {}
+
+    def forward(self, x):
+        self.clear()
+        _ = self.model(x)
+
+        if self.arch_type == "resnet":
+            def key(k):
+                layer_idx = int(k.split(".")[0][-1])
+                block_idx = int(k.split(".")[1])
+                return layer_idx*100 + block_idx
+            self.layer_order = sorted(self.activations.keys(), key=key)
+        else:
+            def key(k):
+                return int(k.split(".")[1])
+            self.layer_order = sorted(self.activations.keys(), key=key)
+
+        return [self.activations[k] for k in self.layer_order]
+
+    def get_rep(self, h):
+        if self.arch_type == "resnet":
+            return h.mean(dim=[2,3]) if h.ndim == 4 else h
+        else:
+            if self.norm is not None:
+                h = self.norm(h)
+            return h[:,0]
+
+    def init_probes(self, device, out_dim=1000):
+        dummy = torch.zeros(1,3,224,224, device=device)
+        _ = self.forward(dummy)
+        for name in self.layer_order:
+            r = self.get_rep(self.activations[name])
+            dim = int(r.shape[1])
+            self.probes[name] = nn.Linear(dim, out_dim).to(device)
+
+    def train_probes(self, loader, device, probe_epochs: int, lr=1e-3):
+        if not self.probes:
+            self.init_probes(device)
+
+        params = []
+        for p in self.probes.values():
+            params += list(p.parameters())
+        opt = optim.Adam(params, lr=lr)
+        loss_fn = nn.MSELoss()
+        self.model.eval()
+
+        for _ in range(probe_epochs):
+            for x, _y in loader:
+                x = x.to(device, non_blocking=True)
+                opt.zero_grad(set_to_none=True)
+                with torch.no_grad():
+                    final_logits = self.model(x)
+                    _ = self.forward(x)
+
+                total = 0.0
+                for name in self.layer_order:
+                    r = self.get_rep(self.activations[name])
+                    z = self.probes[name](r)
+                    total = total + loss_fn(z, final_logits)
+                total.backward()
+                opt.step()
+
+    def project_layer_logits(self, acts):
+        logits_list = []
+        for i, name in enumerate(self.layer_order):
+            r = self.get_rep(acts[i])
+            z = self.probes[name](r)
+            logits_list.append(z)
+        return logits_list
+
+# -------------------------
+# Trajectories: memory-safe collection to CPU
+# -------------------------
+def batch_margin(logits: torch.Tensor) -> torch.Tensor:
+    vals, _ = torch.topk(logits, k=2, dim=1)
+    return vals[:,0] - vals[:,1]
+
+@torch.no_grad()
+def collect_trajectories(tracker: HighFidelityTracker, loader, device) -> np.ndarray:
+    # Determine L first
+    x0, _ = next(iter(loader))
+    x0 = x0.to(device, non_blocking=True)
+    with torch.cuda.amp.autocast(enabled=(device.type=="cuda")):
+        acts0 = tracker.forward(x0)
+        logits0 = tracker.project_layer_logits(acts0)
+        L = len(logits0)
+    del x0, acts0, logits0
+
+    N = len(loader.dataset)
+    out = np.empty((N, L), dtype=np.float32)
+
+    write_i = 0
+    for i, (x, _y) in enumerate(tqdm(loader, desc=f"traj {tracker.arch_type}", leave=False)):
+        x = x.to(device, non_blocking=True)
+        with torch.cuda.amp.autocast(enabled=(device.type=="cuda"), dtype=torch.float16):
+            acts = tracker.forward(x)
+            logits_layers = tracker.project_layer_logits(acts)
+            # stack margins on GPU then move to CPU once
+            margins = torch.stack([batch_margin(z) for z in logits_layers], dim=1)  # (B,L)
+        b = margins.shape[0]
+        out[write_i:write_i+b] = margins.float().cpu().numpy()
+        write_i += b
+        # Memory Hardening: Explicitly clear refs every few batches
+        if i % 10 == 0:
+            del x, acts, logits_layers, margins
+            cleanup_cuda()
+        else:
+            del x, acts, logits_layers, margins
+
+    assert write_i == N
+    return out
+
+# -------------------------
+# Dominance + metrics
+# -------------------------
+def dominance_mask(traj: np.ndarray, alpha: float, eps_final: float) -> np.ndarray:
+    final = max(float(traj[-1]), float(eps_final))
+    return traj >= (alpha * final)
+
+def t_d_persistence(traj: np.ndarray, alpha: float, eps_final: float, req_consecutive: int):
+    m = dominance_mask(traj, alpha, eps_final)
+    L = len(m)
+    for t in range(L - req_consecutive + 1):
+        if np.all(m[t:t+req_consecutive]):
+            return float(t / max(L-1,1))
+    return None
+
+def t_abs_last_violation(traj: np.ndarray, alpha: float, eps_final: float) -> float:
+    m = dominance_mask(traj, alpha, eps_final)
+    falses = np.where(~m)[0]
+    if len(falses) == 0:
+        return 0.0
+    t_abs = int(falses[-1] + 1)
+    return float(t_abs / max((len(m)-1),1))
+
+def violations_count(traj: np.ndarray, alpha: float, eps_final: float) -> int:
+    return int(np.sum(~dominance_mask(traj, alpha, eps_final)))
+
+# -------------------------
+# Alpha sweep + balanced-reach pick
+# -------------------------
+def sweep_alphas(res_traj, vit_traj, alphas, eps_final, req_consecutive):
+    N = res_traj.shape[0]
+    rows = []
+    for alpha in alphas:
+        td_r = []; td_v = []
+        tabs_r = np.empty(N, dtype=np.float32)
+        tabs_v = np.empty(N, dtype=np.float32)
+        viol_r = np.empty(N, dtype=np.int32)
+        viol_v = np.empty(N, dtype=np.int32)
+
+        for i in range(N):
+            tdr = t_d_persistence(res_traj[i], alpha, eps_final, req_consecutive)
+            tdv = t_d_persistence(vit_traj[i], alpha, eps_final, req_consecutive)
+            if tdr is not None: td_r.append(tdr)
+            if tdv is not None: td_v.append(tdv)
+
+            tabs_r[i] = t_abs_last_violation(res_traj[i], alpha, eps_final)
+            tabs_v[i] = t_abs_last_violation(vit_traj[i], alpha, eps_final)
+            viol_r[i] = violations_count(res_traj[i], alpha, eps_final)
+            viol_v[i] = violations_count(vit_traj[i], alpha, eps_final)
+
+        reach_r = len(td_r) / N
+        reach_v = len(td_v) / N
+        common = min(reach_r, reach_v)
+
+        td_r = np.array(td_r, dtype=np.float64)
+        td_v = np.array(td_v, dtype=np.float64)
+
+        rows.append(dict(
+            alpha=float(alpha),
+            reach_resnet=float(reach_r),
+            reach_vit=float(reach_v),
+            common_reach=float(common),
+            reach_gap=float(reach_r - reach_v),
+            tabs_gap=float(np.mean(tabs_r) - np.mean(tabs_v)),
+            cohens_d_tabs=float(cohens_d(tabs_r.astype(np.float64), tabs_v.astype(np.float64))),
+            mean_viol_resnet=float(np.mean(viol_r)),
+            mean_viol_vit=float(np.mean(viol_v)),
+            viol_gap=float(np.mean(viol_r) - np.mean(viol_v)),
+            n_td_resnet=int(len(td_r)),
+            n_td_vit=int(len(td_v)),
+        ))
+    return pd.DataFrame(rows)
+
+def pick_alpha_balanced(df, target_common=0.60, max_gap=0.06):
+    # 1) enforce fairness + common reach
+    cand = df[(df["common_reach"] >= target_common) & (np.abs(df["reach_gap"]) <= max_gap)].copy()
+
+    # 2) fallback ladder if too strict (don’t stall the run)
+    if cand.empty:
+        cand = df[df["common_reach"] >= min(0.50, target_common)].copy()
+    if cand.empty:
+        cand = df.copy()
+
+    cand["abs_gap"] = np.abs(cand["reach_gap"])
+    cand["abs_d"] = np.abs(cand["cohens_d_tabs"])
+    cand["abs_tabs_gap"] = np.abs(cand["tabs_gap"])
+    
+    # Sort by: common_reach desc, abs_gap asc, abs_tabs_gap desc, abs_d desc
+    cand = cand.sort_values(
+        ["common_reach", "abs_gap", "abs_tabs_gap", "abs_d"],
+        ascending=[False, True, False, False]
+    )
+    return float(cand.iloc[0]["alpha"])
+
+# -------------------------
+# Falsifiers (Operating on Scalars)
+# -------------------------
+def null_depth_permute(traj: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    N, L = traj.shape
+    out = traj.copy()
+    for i in range(N):
+        out[i] = out[i, rng.permutation(L)]
+    return out
+
+def null_labelswap_from_tabs(tabs_r: np.ndarray, tabs_v: np.ndarray, rng: np.random.Generator):
+    N = len(tabs_r)
+    swap = rng.random(N) < 0.5
+    r2 = tabs_r.copy(); v2 = tabs_v.copy()
+    r2[swap], v2[swap] = v2[swap], r2[swap]
+    return float(np.mean(r2) - np.mean(v2)), float(cohens_d(r2, v2))
+
+def null_pooled_from_tabs(tabs_r: np.ndarray, tabs_v: np.ndarray, rng: np.random.Generator):
+    pool = np.concatenate([tabs_r, tabs_v], axis=0)
+    perm = rng.permutation(pool.shape[0])
+    N = len(tabs_r)
+    r = pool[perm[:N]]
+    v = pool[perm[N:2*N]]
+    return float(np.mean(r) - np.mean(v)), float(cohens_d(r, v))
+
+def eval_tabs_gap_d(res_traj, vit_traj, alpha, eps_final):
+    tabs_r = np.array([t_abs_last_violation(res_traj[i], alpha, eps_final) for i in range(res_traj.shape[0])], dtype=np.float64)
+    tabs_v = np.array([t_abs_last_violation(vit_traj[i], alpha, eps_final) for i in range(vit_traj.shape[0])], dtype=np.float64)
+    return float(np.mean(tabs_r) - np.mean(tabs_v)), float(cohens_d(tabs_r, tabs_v))
+
+# -------------------------
+# One run
+# -------------------------
+def run_one(run_id: int, seed: int, batch_probe: int, batch_traj: int):
+    set_all_seeds(seed)
+    device = torch.device(DEVICE)
+
+    probe_loader, traj_loader = make_loaders(
+        DATASET, DATA_ROOT,
+        PROBE_N, TRAJ_N,
+        batch_probe, batch_traj,
+        seed
+    )
+
+    # ---- build and process models sequentially to reduce peak memory ----
+    # ResNet
+    resnet = timm.create_model("resnet18", pretrained=True, num_classes=1000).to(device).eval()
+    tr_r = HighFidelityTracker(resnet, "resnet")
+    tr_r.train_probes(probe_loader, device, probe_epochs=PROBE_EPOCHS)
+    res_traj = collect_trajectories(tr_r, traj_loader, device)  # CPU numpy
+
+    del tr_r, resnet
+    cleanup_cuda()
+
+    # ViT
+    vit = timm.create_model("vit_tiny_patch16_224", pretrained=True, num_classes=1000).to(device).eval()
+    tr_v = HighFidelityTracker(vit, "vit")
+    tr_v.train_probes(probe_loader, device, probe_epochs=PROBE_EPOCHS)
+    vit_traj = collect_trajectories(tr_v, traj_loader, device)  # CPU numpy
+
+    del tr_v, vit
+    # Memory Hardening: Free loaders
+    del probe_loader, traj_loader
+    cleanup_cuda()
+
+    # alpha sweep + balanced pick
+    alphas = np.linspace(ALPHA_LO, ALPHA_HI, ALPHA_STEPS)
+    df_sweep = sweep_alphas(res_traj, vit_traj, alphas, EPS_FINAL, REQ_CONSEC)
+    alpha = pick_alpha_balanced(df_sweep, TARGET_COMMON_REACH, MAX_REACH_GAP)
+
+    # save sweep
+    sweep_path = os.path.join(OUTDIR, f"alpha_sweep_run_{run_id:03d}.csv")
+    df_sweep.to_csv(sweep_path, index=False)
+
+    # per-sample metrics at chosen alpha
+    N = res_traj.shape[0]
+    td_r = np.full(N, np.nan, dtype=np.float64)
+    td_v = np.full(N, np.nan, dtype=np.float64)
+    tabs_r = np.empty(N, dtype=np.float64)
+    tabs_v = np.empty(N, dtype=np.float64)
+    viol_r = np.empty(N, dtype=np.int32)
+    viol_v = np.empty(N, dtype=np.int32)
+
+    for i in range(N):
+        tdr = t_d_persistence(res_traj[i], alpha, EPS_FINAL, REQ_CONSEC)
+        tdv = t_d_persistence(vit_traj[i], alpha, EPS_FINAL, REQ_CONSEC)
+        if tdr is not None: td_r[i] = tdr
+        if tdv is not None: td_v[i] = tdv
+        tabs_r[i] = t_abs_last_violation(res_traj[i], alpha, EPS_FINAL)
+        tabs_v[i] = t_abs_last_violation(vit_traj[i], alpha, EPS_FINAL)
+        viol_r[i] = violations_count(res_traj[i], alpha, EPS_FINAL)
+        viol_v[i] = violations_count(vit_traj[i], alpha, EPS_FINAL)
+
+    abs_path = os.path.join(OUTDIR, f"absorption_metrics_run_{run_id:03d}.csv")
+    pd.DataFrame({
+        "td_resnet": td_r, "td_vit": td_v,
+        "t_abs_resnet": tabs_r, "t_abs_vit": tabs_v,
+        "violations_resnet": viol_r, "violations_vit": viol_v,
+    }).to_csv(abs_path, index=False)
+
+    # summary stats
+    reach_r = float(np.isfinite(td_r).mean())
+    reach_v = float(np.isfinite(td_v).mean())
+    common  = float(min(reach_r, reach_v))
+    gap_tabs = float(np.mean(tabs_r) - np.mean(tabs_v))
+    d_tabs   = float(cohens_d(tabs_r, tabs_v))
+    ci_tabs  = bootstrap_ci_gap(tabs_r, tabs_v, n_boot=BOOT_N, seed=seed)
+
+    gap_viol = float(np.mean(viol_r) - np.mean(viol_v))
+    ci_viol  = bootstrap_ci_gap(viol_r.astype(np.float64), viol_v.astype(np.float64), n_boot=BOOT_N, seed=seed+999)
+
+    # falsifiers (Operating on scalar tabs_r, tabs_v)
+    nulls = {}
+    if DO_NULLS:
+        rng = np.random.default_rng(seed + 12345)
+
+        if NULL_DEPTHPERM:
+            rd = null_depth_permute(res_traj, rng)
+            vd = null_depth_permute(vit_traj, rng)
+            g, d = eval_tabs_gap_d(rd, vd, alpha, EPS_FINAL)
+            nulls["depthperm_tabs_gap"] = g
+            nulls["depthperm_tabs_d"] = d
+
+        if NULL_LABELSWAP:
+            g, d = null_labelswap_from_tabs(tabs_r, tabs_v, rng)
+            nulls["labelswap_tabs_gap"] = g
+            nulls["labelswap_tabs_d"] = d
+
+        if NULL_POOLEDRESAMPLE:
+            g, d = null_pooled_from_tabs(tabs_r, tabs_v, rng)
+            nulls["pooled_tabs_gap"] = g
+            nulls["pooled_tabs_d"] = d
+
+    # boundary spec json (per run)
+    spec = {
+        "run_id": int(run_id),
+        "seed": int(seed),
+        "dataset": DATASET,
+        "alpha_pick_mode": "balanced_reach",
+        "alpha": float(alpha),
+        "alpha_grid": [ALPHA_LO, ALPHA_HI, ALPHA_STEPS],
+        "balanced_reach": {
+            "target_common_reach": float(TARGET_COMMON_REACH),
+            "max_reach_gap": float(MAX_REACH_GAP),
+        },
+        "eps_final_margin": float(EPS_FINAL),
+        "req_consecutive": int(REQ_CONSEC),
+        "probe_n": int(PROBE_N),
+        "traj_n": int(TRAJ_N),
+        "probe_epochs": int(PROBE_EPOCHS),
+        "summary": {
+            "reach_resnet": reach_r,
+            "reach_vit": reach_v,
+            "common_reach": common,
+            "t_abs_mean_resnet": float(np.mean(tabs_r)),
+            "t_abs_mean_vit": float(np.mean(tabs_v)),
+            "t_abs_gap_R_minus_V": gap_tabs,
+            "t_abs_d_R_minus_V": d_tabs,
+            "t_abs_gap_ci95": [float(ci_tabs[0]), float(ci_tabs[1])],
+            "viol_mean_resnet": float(np.mean(viol_r)),
+            "viol_mean_vit": float(np.mean(viol_v)),
+            "viol_gap_R_minus_V": gap_viol,
+            "viol_gap_ci95": [float(ci_viol[0]), float(ci_viol[1])],
+        },
+        "nulls": nulls,
+        "artifacts": {
+            "alpha_sweep_csv": os.path.basename(sweep_path),
+            "absorption_metrics_csv": os.path.basename(abs_path),
+        }
+    }
+    with open(os.path.join(OUTDIR, f"boundary_spec_run_{run_id:03d}.json"), "w") as f:
+        json.dump(spec, f, indent=2)
+
+    row = dict(
+        run_id=int(run_id),
+        seed=int(seed),
+        alpha=float(alpha),
+        reach_resnet=reach_r,
+        reach_vit=reach_v,
+        common_reach=common,
+        t_abs_gap_R_minus_V=gap_tabs,
+        t_abs_d_R_minus_V=d_tabs,
+        t_abs_ci95_low=float(ci_tabs[0]),
+        t_abs_ci95_high=float(ci_tabs[1]),
+        viol_gap_R_minus_V=gap_viol,
+        viol_ci95_low=float(ci_viol[0]),
+        viol_ci95_high=float(ci_viol[1]),
+        **nulls
+    )
+    return row
+
+# -------------------------
+# MAIN LOOP (time-boxed)
+# -------------------------
+# Memory Hardening: Disable grad where not needed
+torch.set_grad_enabled(False)
+
+start = time.time()
+rows = []
+batch_probe = BATCH_PROBE
+batch_traj  = BATCH_TRAJ
+
+def print_live_summary(df):
+    cols = ["run_id","seed","alpha","common_reach","t_abs_gap_R_minus_V","t_abs_d_R_minus_V","viol_gap_R_minus_V"]
+    print("\n=== SUMMARY (so far) ===")
+    print(df[cols].to_string(index=False))
+    # direction checks
+    dir_tabs = int((df["t_abs_gap_R_minus_V"] < 0).sum())
+    dir_viol = int((df["viol_gap_R_minus_V"] < 0).sum())
+    print(f"\nDirection checks: t_abs_gap<0 count: {dir_tabs}/{len(df)} | viol_gap<0 count: {dir_viol}/{len(df)}")
+    # falsifier quick view if present
+    if "depthperm_tabs_d" in df.columns:
+        print(f"Null(depthperm) mean d: {df['depthperm_tabs_d'].mean():.3f} (should ~0)")
+    if "labelswap_tabs_d" in df.columns:
+        print(f"Null(labelswap) mean d: {df['labelswap_tabs_d'].mean():.3f} (should ~0)")
+    if "pooled_tabs_d" in df.columns:
+        print(f"Null(pooled)    mean d: {df['pooled_tabs_d'].mean():.3f} (should ~0)")
+
+run_id = 0
+while True:
+    elapsed_min = (time.time() - start) / 60.0
+    if elapsed_min >= RUN_MINUTES or run_id >= RUNS_MAX:
+        break
+
+    run_id += 1
+    seed = SEED_START + (run_id - 1)
+
+    print(f"\n=== Run {run_id} | seed={seed} | batches probe={batch_probe}, traj={batch_traj} | elapsed={elapsed_min:.1f} min ===")
+    try:
+        # Enable grad temporarily for probe training if needed, but HighFidelityTracker.train_probes 
+        # should handle its own grad logic if it uses torch.optim.
+        # Actually, let's keep it simple: run_one will handle it.
+        row = run_one(run_id, seed, batch_probe, batch_traj)
+        rows.append(row)
+
+        df = pd.DataFrame(rows)
+        df.to_csv(os.path.join(OUTDIR, "runs_summary.csv"), index=False)
+
+        print(f"alpha={row['alpha']:.3f} | common_reach={row['common_reach']:.3f} "
+              f"| t_abs_gap(R-V)={row['t_abs_gap_R_minus_V']:.3f} | d={row['t_abs_d_R_minus_V']:.3f} "
+              f"| viol_gap={row['viol_gap_R_minus_V']:.2f}")
+        if DO_NULLS and "depthperm_tabs_d" in row:
+            print(f"null d: depthperm={row.get('depthperm_tabs_d', float('nan')):.3f} "
+                  f"| labelswap={row.get('labelswap_tabs_d', float('nan')):.3f} "
+                  f"| pooled={row.get('pooled_tabs_d', float('nan')):.3f}")
+
+        if run_id % 10 == 0:
+            print_live_summary(df)
+
+    except torch.cuda.OutOfMemoryError as e:
+        print("\n[OOM] CUDA out of memory. Attempting recovery by shrinking batch sizes.")
+        print("error:", str(e)[:200], "...")
+        cleanup_cuda()
+        # shrink batches for the next iteration
+        batch_probe = max(8, batch_probe // 2)
+        batch_traj  = max(8, batch_traj  // 2)
+        print(f"[OOM] New batch sizes: probe={batch_probe}, traj={batch_traj}")
+        # continue loop (don’t lose previous results)
+        continue
+    except Exception as e:
+        print("\n[ERROR] stopping due to exception:", repr(e))
+        break
+
+# final print
+df = pd.DataFrame(rows)
+if len(df):
+    print_live_summary(df)
+print("\nSaved:", os.path.join(OUTDIR, "runs_summary.csv"))
+print("Artifacts folder:", OUTDIR)
