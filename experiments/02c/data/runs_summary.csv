@@ -1,0 +1,2 @@
+seed,alpha,mean_tabs_res,mean_tabs_vit,mean_viol_res,mean_viol_vit,escape_max_res,escape_max_vit,null_escape_res,null_escape_vit
+42,0.89,0.5548571428571429,0.8570909090909091,1.062,6.658,0.29591836734693877,0.306,0.32653061224489793,0.32

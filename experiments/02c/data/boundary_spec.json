@@ -1,0 +1,25 @@
+{
+    "SEED": 42,
+    "DEVICE": "cuda",
+    "OUT_DIR": "exp02c_results_20260116_021750",
+    "BATCH_SIZE": 64,
+    "EXP_BATCH_SIZE": 64,
+    "PROBE_N": 500,
+    "TRAJ_N": 500,
+    "PROBE_EPOCHS": 3,
+    "PERSISTENCE_WINDOW": 2,
+    "EPS_FINAL_MARGIN": 0.001,
+    "ALPHA_MIN": 0.5,
+    "ALPHA_MAX": 0.98,
+    "ALPHA_STEPS": 49,
+    "NOISE_SIGMAS": [
+        0.0,
+        0.01,
+        0.02,
+        0.04,
+        0.06,
+        0.08,
+        0.1
+    ],
+    "PERTURB_REPEATS": 1
+}
